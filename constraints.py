@@ -74,14 +74,14 @@ class And(Constraint):
     constraints: list
 
     def check(self, assignment):
-        results = []
+        saw_undetermined = False
         for c in self.constraints:
-            results.append(c.check(assignment))
-        if TriState.VIOLATED in results:
-            return TriState.VIOLATED
-        if TriState.UNDETERMINED in results:
-            return TriState.UNDETERMINED
-        return TriState.SATISFIED
+            result = c.check(assignment)
+            if result == TriState.VIOLATED:
+                return TriState.VIOLATED
+            if result == TriState.UNDETERMINED:
+                saw_undetermined = True
+        return TriState.UNDETERMINED if saw_undetermined else TriState.SATISFIED
 
 
 @dataclass
@@ -91,14 +91,14 @@ class Or(Constraint):
     constraints: list
 
     def check(self, assignment):
-        results = []
+        saw_undetermined = False
         for c in self.constraints:
-            results.append(c.check(assignment))
-        if TriState.SATISFIED in results:
-            return TriState.SATISFIED
-        if TriState.UNDETERMINED in results:
-            return TriState.UNDETERMINED
-        return TriState.VIOLATED
+            result = c.check(assignment)
+            if result == TriState.SATISFIED:
+                return TriState.SATISFIED
+            if result == TriState.UNDETERMINED:
+                saw_undetermined = True
+        return TriState.UNDETERMINED if saw_undetermined else TriState.VIOLATED
 
 
 def validate_constraints(puzzle, constraint):
