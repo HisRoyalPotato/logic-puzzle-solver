@@ -4,7 +4,9 @@ class Assignment:
 
     def __init__(self, raw):
         # Copy so mutating this Assignment doesn't affect the caller's dict.
-        self._raw = {category: dict(positions) for category, positions in raw.items()}
+        self._raw = {}
+        for category, positions in raw.items():
+            self._raw[category] = dict(positions)
 
         # Build the reverse index once, scanning _raw a single time.
         self._index = {}
@@ -19,6 +21,10 @@ class Assignment:
     def position_of(self, category, value):
         """Which position has `value` for `category`?"""
         return self._index[(category, value)]
+
+    def try_position_of(self, category, value):
+        """Like position_of, but returns None instead of raising if unassigned."""
+        return self._index.get((category, value))
 
     def set_value(self, category, position, value):
         """Assign a value, keeping _raw and _index in sync."""
