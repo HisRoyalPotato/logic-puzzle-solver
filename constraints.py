@@ -20,6 +20,12 @@ _OPERATORS = {
 }
 
 
+def _validate_operator(operator):
+    """Raise ValueError if `operator` isn't one of the supported comparisons."""
+    if operator not in _OPERATORS:
+        raise ValueError(f"unsupported operator '{operator}', expected one of {sorted(_OPERATORS)}")
+
+
 class Constraint(ABC):
     """Something that can be checked against an Assignment."""
 
@@ -35,6 +41,9 @@ class AbsolutePosition(Constraint):
     category_value: tuple
     operator: str
     position: int
+
+    def __post_init__(self):
+        _validate_operator(self.operator)
 
     def check(self, assignment):
         category, value = self.category_value
@@ -54,6 +63,9 @@ class RelativePosition(Constraint):
     b: tuple
     operator: str
     offset: int = 0
+
+    def __post_init__(self):
+        _validate_operator(self.operator)
 
     def check(self, assignment):
         a_category, a_value = self.a
