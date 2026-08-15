@@ -4,7 +4,9 @@ class Puzzle:
 
     def __init__(self, categories):
         # Copy so mutating this Puzzle doesn't affect the caller's dict.
-        self.categories = {name: list(values) for name, values in categories.items()}
+        self.categories = {}
+        for name, values in categories.items():
+            self.categories[name] = list(values)
 
         self._validate()
 
@@ -16,7 +18,9 @@ class Puzzle:
     def _validate(self):
         """A legal puzzle: every category has the same number of values,
         and no value repeats within a category."""
-        sizes = {len(values) for values in self.categories.values()}
+        sizes = set()
+        for values in self.categories.values():
+            sizes.add(len(values))
         if len(sizes) > 1:
             raise ValueError(
                 f"all categories must have the same number of values, got sizes {sizes}"
