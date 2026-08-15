@@ -99,3 +99,26 @@ class Or(Constraint):
         if TriState.UNDETERMINED in results:
             return TriState.UNDETERMINED
         return TriState.VIOLATED
+
+
+def validate_constraints(puzzle, constraint):
+    """Check that every (category, value) `constraint` references actually
+    exists in `puzzle`. Raises ValueError on the first bad reference found."""
+    if isinstance(constraint, AbsolutePosition):
+        _check_value_exists(puzzle, *constraint.category_value)
+    elif isinstance(constraint, RelativePosition):
+        _check_value_exists(puzzle, *constraint.a)
+        _check_value_exists(puzzle, *constraint.b)
+    elif isinstance(constraint, (And, Or)):
+        for child in constraint.constraints:
+            validate_constraints(puzzle, child)
+    else:
+        raise TypeError(f"unknown constraint type: {type(constraint).__name__}")
+
+
+def _check_value_exists(puzzle, category, value):
+    """Raise ValueError if `value` isn't a legal value for `category` in `puzzle`."""
+    if category not in puzzle.categories:
+        raise ValueError(f"'{category}' is not a category in this puzzle")
+    if value not in puzzle.categories[category]:
+        raise ValueError(f"'{value}' is not a valid value for category '{category}'")
