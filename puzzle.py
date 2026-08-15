@@ -16,8 +16,11 @@ class Puzzle:
         self.positions = list(range(1, self.size + 1))
 
     def _validate(self):
-        """A legal puzzle: every category has the same number of values,
-        and no value repeats within a category."""
+        """A legal puzzle: at least one category, every category has the same
+        number of values, and no value repeats within a category."""
+        if not self.categories:
+            raise ValueError("puzzle must have at least one category")
+
         sizes = set()
         for values in self.categories.values():
             sizes.add(len(values))
