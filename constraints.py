@@ -33,6 +33,12 @@ class Constraint(ABC):
     def check(self, assignment):
         """Return a TriState: does this constraint hold given what's assigned so far?"""
 
+    def propagate(self, grid):
+        """Eliminate candidates from `grid` that this constraint proves
+        impossible. Returns True if anything was eliminated. Default: no
+        elimination logic yet (not every constraint type has this built)."""
+        return False
+
 
 @dataclass
 class AbsolutePosition(Constraint):
@@ -53,6 +59,41 @@ class AbsolutePosition(Constraint):
 
         holds = _OPERATORS[self.operator](actual_position, self.position)
         return TriState.SATISFIED if holds else TriState.VIOLATED
+
+    def propagate(self, grid):
+        category, value = self.category_value
+        changed = False
+
+        if self.operator == "==":
+            # value must be at self.position: rule it out everywhere else,
+            # and rule out every other value at self.position (each category
+            # is a one-to-one mapping onto positions).
+            for position in grid.puzzle.positions:
+                if position != self.position:
+                    if grid.eliminate(category, position, value):
+                        changed = True
+            for other_value in grid.puzzle.categories[category]:
+                if other_value != value:
+                    if grid.eliminate(category, self.position, other_value):
+                        changed = True
+
+        elif self.operator == "!=":
+            if grid.eliminate(category, self.position, value):
+                changed = True
+
+        elif self.operator == "<":
+            for position in grid.puzzle.positions:
+                if position >= self.position:
+                    if grid.eliminate(category, position, value):
+                        changed = True
+
+        elif self.operator == ">":
+            for position in grid.puzzle.positions:
+                if position <= self.position:
+                    if grid.eliminate(category, position, value):
+                        changed = True
+
+        return changed
 
 
 @dataclass
@@ -94,6 +135,15 @@ class And(Constraint):
             if result == TriState.UNDETERMINED:
                 saw_undetermined = True
         return TriState.UNDETERMINED if saw_undetermined else TriState.SATISFIED
+
+    def propagate(self, grid):
+        # Every child gets to eliminate independently — no short-circuiting here.
+        # (Unlike check(), stopping early would mean missing real eliminations.)
+        changed = False
+        for c in self.constraints:
+            if c.propagate(grid):
+                changed = True
+        return changed
 
 
 @dataclass

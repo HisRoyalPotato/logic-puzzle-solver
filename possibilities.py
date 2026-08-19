@@ -6,6 +6,9 @@ class PossibilityGrid:
     """Tracks, per (category, position), the set of values not yet ruled out."""
 
     def __init__(self, puzzle):
+        # Kept so constraints can ask "what positions/values exist" during propagation.
+        self.puzzle = puzzle
+
         # Every position starts able to be any legal value for its category.
         self._candidates = {}
         for category, values in puzzle.categories.items():
@@ -17,14 +20,17 @@ class PossibilityGrid:
         return set(self._candidates[(category, position)])
 
     def eliminate(self, category, position, value):
-        """Rule out `value` at (category, position). No-op if already ruled out."""
+        """Rule out `value` at (category, position). No-op if already ruled
+        out. Returns True if a candidate was actually removed, False if it
+        was already gone — callers use this to detect whether anything changed."""
         remaining = self._candidates[(category, position)]
         if value not in remaining:
-            return
+            return False
 
         remaining.discard(value)
         if not remaining:
             raise Contradiction(f"no values remain for '{category}' at position {position}")
+        return True
 
     def is_forced(self, category, position):
         """True if exactly one candidate remains for (category, position)."""
