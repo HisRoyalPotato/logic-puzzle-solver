@@ -19,6 +19,10 @@ class PossibilityGrid:
         """Copy of the current possible values for (category, position)."""
         return set(self._candidates[(category, position)])
 
+    def is_candidate(self, category, position, value):
+        """True if `value` is still possible at (category, position)."""
+        return value in self._candidates[(category, position)]
+
     def eliminate(self, category, position, value):
         """Rule out `value` at (category, position). No-op if already ruled
         out. Returns True if a candidate was actually removed, False if it
