@@ -1,14 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum, auto
 import operator as op
-
-
-class TriState(Enum):
-    """Result of checking a constraint against an assignment that may be incomplete."""
-    SATISFIED = auto()
-    VIOLATED = auto()
-    UNDETERMINED = auto()
 
 
 # Maps the operator strings constraints use onto Python's comparison functions.
@@ -27,17 +19,12 @@ def _validate_operator(operator):
 
 
 class Constraint(ABC):
-    """Something that can be checked against an Assignment."""
+    """A clue. Knows how to rule candidates out of a PossibilityGrid."""
 
     @abstractmethod
-    def check(self, assignment):
-        """Return a TriState: does this constraint hold given what's assigned so far?"""
-
-    def propagate(self, grid):
-        """Eliminate candidates from `grid` that this constraint proves
-        impossible. Returns True if anything was eliminated. Default: no
-        elimination logic yet (not every constraint type has this built)."""
-        return False
+    def propagate(self, possibilities):
+        """Rule out candidates this clue proves impossible.
+        Returns True if anything was actually eliminated."""
 
 
 @dataclass
@@ -51,47 +38,35 @@ class AbsolutePosition(Constraint):
     def __post_init__(self):
         _validate_operator(self.operator)
 
-    def check(self, assignment):
+    def propagate(self, possibilities):
         category, value = self.category_value
-        actual_position = assignment.try_position_of(category, value)
-        if actual_position is None:
-            return TriState.UNDETERMINED
-
-        holds = _OPERATORS[self.operator](actual_position, self.position)
-        return TriState.SATISFIED if holds else TriState.VIOLATED
-
-    def propagate(self, grid):
-        category, value = self.category_value
+        puzzle = possibilities.puzzle
         changed = False
 
         if self.operator == "==":
-            # value must be at self.position: rule it out everywhere else,
-            # and rule out every other value at self.position (each category
-            # is a one-to-one mapping onto positions).
-            for position in grid.puzzle.positions:
-                if position != self.position:
-                    if grid.eliminate(category, position, value):
-                        changed = True
-            for other_value in grid.puzzle.categories[category]:
-                if other_value != value:
-                    if grid.eliminate(category, self.position, other_value):
-                        changed = True
+            # Pinned here, so it can't be anywhere else — and nothing else can
+            # be here, since a category maps one-to-one onto positions.
+            for position in puzzle.positions:
+                if position != self.position and possibilities.eliminate(category, position, value):
+                    changed = True
+            for other_value in puzzle.categories[category]:
+                if other_value != value and possibilities.eliminate(category, self.position, other_value):
+                    changed = True
 
         elif self.operator == "!=":
-            if grid.eliminate(category, self.position, value):
+            if possibilities.eliminate(category, self.position, value):
                 changed = True
 
         elif self.operator == "<":
-            for position in grid.puzzle.positions:
-                if position >= self.position:
-                    if grid.eliminate(category, position, value):
-                        changed = True
+            # Must sit below self.position, so rule it out at or above.
+            for position in puzzle.positions:
+                if position >= self.position and possibilities.eliminate(category, position, value):
+                    changed = True
 
         elif self.operator == ">":
-            for position in grid.puzzle.positions:
-                if position <= self.position:
-                    if grid.eliminate(category, position, value):
-                        changed = True
+            for position in puzzle.positions:
+                if position <= self.position and possibilities.eliminate(category, position, value):
+                    changed = True
 
         return changed
 
@@ -108,59 +83,38 @@ class RelativePosition(Constraint):
     def __post_init__(self):
         _validate_operator(self.operator)
 
-    def check(self, assignment):
-        a_category, a_value = self.a
-        b_category, b_value = self.b
-        a_position = assignment.try_position_of(a_category, a_value)
-        b_position = assignment.try_position_of(b_category, b_value)
-        if a_position is None or b_position is None:
-            return TriState.UNDETERMINED
-
-        holds = _OPERATORS[self.operator](a_position + self.offset, b_position)
-        return TriState.SATISFIED if holds else TriState.VIOLATED
+    def propagate(self, possibilities):
+        # Not built yet. Needs arc consistency: drop any candidate position for
+        # `a` that no candidate position of `b` can satisfy, then the reverse.
+        return False
 
 
 @dataclass
 class And(Constraint):
-    """Holds only if every child constraint holds."""
+    """Holds only if every child holds, so every child may eliminate freely."""
 
     constraints: list
 
-    def check(self, assignment):
-        saw_undetermined = False
-        for c in self.constraints:
-            result = c.check(assignment)
-            if result == TriState.VIOLATED:
-                return TriState.VIOLATED
-            if result == TriState.UNDETERMINED:
-                saw_undetermined = True
-        return TriState.UNDETERMINED if saw_undetermined else TriState.SATISFIED
-
-    def propagate(self, grid):
-        # Every child gets to eliminate independently — no short-circuiting here.
-        # (Unlike check(), stopping early would mean missing real eliminations.)
+    def propagate(self, possibilities):
+        # No short-circuiting — each child may rule out different candidates.
         changed = False
-        for c in self.constraints:
-            if c.propagate(grid):
+        for constraint in self.constraints:
+            if constraint.propagate(possibilities):
                 changed = True
         return changed
 
 
 @dataclass
 class Or(Constraint):
-    """Holds if at least one child constraint holds."""
+    """Holds if at least one child holds."""
 
     constraints: list
 
-    def check(self, assignment):
-        saw_undetermined = False
-        for c in self.constraints:
-            result = c.check(assignment)
-            if result == TriState.SATISFIED:
-                return TriState.SATISFIED
-            if result == TriState.UNDETERMINED:
-                saw_undetermined = True
-        return TriState.UNDETERMINED if saw_undetermined else TriState.VIOLATED
+    def propagate(self, possibilities):
+        # Not built yet. A candidate is only impossible if it's impossible in
+        # every branch, which needs trial elimination per branch then an
+        # intersection of the results.
+        return False
 
 
 def validate_constraints(puzzle, constraint):
