@@ -18,6 +18,15 @@ def _validate_operator(operator):
         raise ValueError(f"unsupported operator '{operator}', expected one of {sorted(_OPERATORS)}")
 
 
+def _has_legal_partner(position, partner_positions, pair_is_legal):
+    """True if at least one of `partner_positions` forms a legal pair with
+    `position`. One surviving partner is enough to keep the position alive."""
+    for partner_position in partner_positions:
+        if pair_is_legal(position, partner_position):
+            return True
+    return False
+
+
 class Constraint(ABC):
     """A clue. Knows how to rule candidates out of a PossibilityGrid."""
 
@@ -83,10 +92,45 @@ class RelativePosition(Constraint):
     def __post_init__(self):
         _validate_operator(self.operator)
 
+    def allows(self, position_a, position_b):
+        """True if this pair of positions would satisfy the clue."""
+        compare = _OPERATORS[self.operator]
+        return compare(position_a + self.offset, position_b)
+
     def propagate(self, possibilities):
-        # Not built yet. Needs arc consistency: drop any candidate position for
-        # `a` that no candidate position of `b` can satisfy, then the reverse.
-        return False
+        """Arc consistency, both directions: a position survives only if the
+        other side has at least one surviving position it can pair with."""
+        changed = False
+
+        # Prune `a` first, then prune `b` against the already-narrowed `a`,
+        # so a single pass squeezes out as much as it can.
+        if self._prune(possibilities, self.a, self.b, self.allows):
+            changed = True
+        if self._prune(possibilities, self.b, self.a, lambda pb, pa: self.allows(pa, pb)):
+            changed = True
+
+        return changed
+
+    def _prune(self, possibilities, target, partner, pair_is_legal):
+        """Eliminate every position for `target` that no remaining position of
+        `partner` can legally pair with. `pair_is_legal` takes the positions in
+        (target, partner) order. Returns True if anything was eliminated."""
+        target_category, target_value = target
+        partner_category, partner_value = partner
+
+        # Snapshot both sides up front — positions_for returns a fresh list,
+        # so eliminating below can't disturb what we're looping over.
+        partner_positions = possibilities.positions_for(partner_category, partner_value)
+        target_positions = possibilities.positions_for(target_category, target_value)
+
+        changed = False
+        for target_position in target_positions:
+            if _has_legal_partner(target_position, partner_positions, pair_is_legal):
+                continue
+            if possibilities.eliminate(target_category, target_position, target_value):
+                changed = True
+
+        return changed
 
 
 @dataclass

@@ -1,6 +1,6 @@
 import pytest
 
-from constraints import AbsolutePosition
+from constraints import AbsolutePosition, RelativePosition
 from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
 from solve import (
@@ -138,6 +138,78 @@ def test_propagation_detects_a_value_with_no_possible_position():
 
     with pytest.raises(Contradiction, match="no position remains"):
         propagate_until_stable(grid, clues)
+
+
+# The worked example, run through the whole loop: green left of blue, blue
+# already known not to be house 3. Arc consistency gives green 1 and blue 2,
+# then the puzzle rules hand red the leftover house.
+def test_relative_clue_drives_a_full_solve():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    grid.eliminate("color", 3, "blue")
+
+    propagate_until_stable(
+        grid, [RelativePosition(("color", "green"), ("color", "blue"), "<")]
+    )
+
+    assert solution_for(grid, "color") == {1: "green", 2: "blue", 3: "red"}
+
+
+# Relative and absolute clues feed each other across categories.
+def test_relative_and_absolute_clues_combine():
+    grid = make_grid(
+        {"color": ["red", "green", "blue"], "drink": ["tea", "milk", "water"]}, 3
+    )
+    clues = [
+        # Green is immediately left of blue.
+        RelativePosition(("color", "green"), ("color", "blue"), "==", 1),
+        AbsolutePosition(("color", "green"), "!=", 1),
+        # Tea is drunk in the blue house.
+        RelativePosition(("drink", "tea"), ("color", "blue"), "=="),
+        AbsolutePosition(("drink", "milk"), "==", 1),
+    ]
+
+    propagate_until_stable(grid, clues)
+
+    assert solution_for(grid, "color") == {1: "red", 2: "green", 3: "blue"}
+    assert solution_for(grid, "drink") == {1: "milk", 2: "water", 3: "tea"}
+
+
+# Nothing can sit left of house 1, so "green left of blue" plus "blue in
+# house 1" is impossible. The forward sweep empties green's positions, then
+# the reverse sweep finds blue has no partner left and clears house 1 too.
+def test_relative_clue_can_force_a_contradiction():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [
+        AbsolutePosition(("color", "blue"), "==", 1),
+        RelativePosition(("color", "green"), ("color", "blue"), "<"),
+    ]
+
+    with pytest.raises(Contradiction, match="no values remain for 'color' at position 1"):
+        propagate_until_stable(grid, clues)
+
+
+# A clue that reaches past the end of the board is impossible. propagate()
+# alone can't tell, but the loop's "every value needs a home" rule does.
+def test_relative_clue_with_an_impossible_offset_is_caught_by_the_loop():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [RelativePosition(("color", "green"), ("color", "blue"), "==", 5)]
+
+    with pytest.raises(Contradiction):
+        propagate_until_stable(grid, clues)
+
+
+# Known blind spot, recorded on purpose. Arc consistency only compares pairs of
+# positions, and "position 1 equals position 1" looks legal to it — it has no
+# idea one house can't be two colours. Safe, because being too cautious only
+# leaves the puzzle unsolved; it never crosses off a correct answer.
+def test_same_category_equals_is_not_detected_as_impossible():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [RelativePosition(("color", "red"), ("color", "blue"), "==", 0)]
+
+    propagate_until_stable(grid, clues)
+
+    assert grid.positions_for("color", "red") == [1, 2, 3]
+    assert grid.positions_for("color", "blue") == [1, 2, 3]
 
 
 # Smallest possible puzzle: the loop must settle instead of spinning forever.

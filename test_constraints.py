@@ -81,14 +81,116 @@ def test_unsupported_operator_rejected_at_construction():
         RelativePosition(("color", "red"), ("color", "green"), "~", 1)
 
 
-# Documents the current stub. Delete/replace this once arc consistency lands.
-def test_relative_position_is_not_implemented_yet():
+# "Somewhere to the left": the leftmost spot has nothing to its left to pair
+# with, and the rightmost has nothing to its right.
+def test_relative_less_than_trims_both_ends():
+    grid = make_grid()
+
+    changed = RelativePosition(("color", "green"), ("color", "blue"), "<").propagate(grid)
+
+    assert changed is True
+    assert grid.positions_for("color", "green") == [1, 2, 3]
+    assert grid.positions_for("color", "blue") == [2, 3, 4]
+
+
+def test_relative_greater_than_trims_both_ends():
+    grid = make_grid()
+
+    changed = RelativePosition(("color", "green"), ("color", "blue"), ">").propagate(grid)
+
+    assert changed is True
+    assert grid.positions_for("color", "green") == [2, 3, 4]
+    assert grid.positions_for("color", "blue") == [1, 2, 3]
+
+
+# "Immediately left of" is offset 1 with "==": pos(green) + 1 == pos(blue).
+def test_relative_immediately_left_trims_one_spot_from_each_end():
     grid = make_grid()
 
     changed = RelativePosition(("color", "green"), ("color", "blue"), "==", 1).propagate(grid)
 
-    assert changed is False
-    assert grid.candidates("color", 1) == {"red", "green", "blue", "yellow"}
+    assert changed is True
+    assert grid.positions_for("color", "green") == [1, 2, 3]
+    assert grid.positions_for("color", "blue") == [2, 3, 4]
+
+
+# The user's worked example: green left of blue, blue already down to 1 or 2.
+# Blue can't be 1 (nothing is left of house 1), so blue is 2 and green is 1.
+def test_relative_narrows_when_the_partner_is_already_narrowed():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+    grid = PossibilityGrid(puzzle)
+    grid.eliminate("color", 3, "blue")
+
+    RelativePosition(("color", "green"), ("color", "blue"), "<").propagate(grid)
+
+    assert grid.positions_for("color", "green") == [1]
+    assert grid.positions_for("color", "blue") == [2]
+
+
+# A pinned partner leaves only one illegal spot for "!=".
+def test_relative_not_equals_only_bites_when_partner_is_pinned():
+    grid = make_grid()
+    for position in [1, 2, 4]:
+        grid.eliminate("color", position, "blue")
+
+    changed = RelativePosition(("color", "green"), ("color", "blue"), "!=").propagate(grid)
+
+    assert changed is True
+    assert grid.positions_for("color", "green") == [1, 2, 4]
+
+
+# Cross-category, offset 0: "the same position as".
+def test_relative_equals_links_two_categories():
+    puzzle = Puzzle({"person": ["anna", "ben"], "pet": ["cat", "dog"]}, 2)
+    grid = PossibilityGrid(puzzle)
+    grid.eliminate("person", 1, "anna")
+
+    RelativePosition(("person", "anna"), ("pet", "cat"), "==").propagate(grid)
+
+    assert grid.positions_for("pet", "cat") == [2]
+
+
+# Once arc consistent, a second pass must report no change so the outer
+# fixed-point loop can stop.
+def test_relative_propagate_is_idempotent():
+    grid = make_grid()
+    constraint = RelativePosition(("color", "green"), ("color", "blue"), "==", 1)
+
+    assert constraint.propagate(grid) is True
+    assert constraint.propagate(grid) is False
+
+
+# A negative offset flips the direction: pos(green) - 1 == pos(blue) means
+# green sits immediately to the RIGHT of blue.
+def test_relative_negative_offset_reverses_the_direction():
+    grid = make_grid()
+
+    changed = RelativePosition(("color", "green"), ("color", "blue"), "==", -1).propagate(grid)
+
+    assert changed is True
+    assert grid.positions_for("color", "green") == [2, 3, 4]
+    assert grid.positions_for("color", "blue") == [1, 2, 3]
+
+
+# An offset bigger than the board leaves no legal pair at all, so both sides
+# lose every position. propagate() itself doesn't raise here — no single spot
+# runs out of values — the loop's "every value needs a home" rule catches it.
+def test_relative_impossible_offset_empties_both_sides():
+    grid = make_grid()
+
+    RelativePosition(("color", "green"), ("color", "blue"), "==", 9).propagate(grid)
+
+    assert grid.positions_for("color", "green") == []
+    assert grid.positions_for("color", "blue") == []
+
+
+# allows() is the yes/no pair test the sweep is built on.
+def test_allows_encodes_operator_and_offset():
+    immediately_left = RelativePosition(("color", "green"), ("color", "blue"), "==", 1)
+
+    assert immediately_left.allows(1, 2) is True
+    assert immediately_left.allows(2, 1) is False
+    assert immediately_left.allows(1, 3) is False
 
 
 # And runs every child, so eliminations from all of them land.
