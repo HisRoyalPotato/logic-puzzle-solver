@@ -39,6 +39,11 @@ calls deliberately rather than have them decided for me.
 
 ## How I want you to work with me
 
+### Simple Language: Speak to me like I'm a 5th grader
+I cannot focus when reading a bunch of complex words, so I like very
+simple english language used. Always default to clear explanations and
+simple words when I need clarification on anything about the project.
+
 ### Priority: I need to understand everything, not just have it work
 My goal is to be able to explain every part of this project in depth
 in a technical interview. A working feature I don't understand is
