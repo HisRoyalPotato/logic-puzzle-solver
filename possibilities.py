@@ -23,6 +23,16 @@ class PossibilityGrid:
         """True if `value` is still possible at (category, position)."""
         return value in self._candidates[(category, position)]
 
+    def positions_for(self, category, value):
+        """The positions where `value` is still possible — the mirror image of
+        candidates(). Returns a fresh list, so callers can safely eliminate
+        while looping over it."""
+        open_positions = []
+        for position in self.puzzle.positions:
+            if value in self._candidates[(category, position)]:
+                open_positions.append(position)
+        return open_positions
+
     def eliminate(self, category, position, value):
         """Rule out `value` at (category, position). No-op if already ruled
         out. Returns True if a candidate was actually removed, False if it

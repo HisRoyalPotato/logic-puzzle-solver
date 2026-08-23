@@ -54,10 +54,7 @@ def apply_value_must_be_somewhere(possibilities):
 
     for category, values in puzzle.categories.items():
         for value in values:
-            open_positions = []
-            for position in puzzle.positions:
-                if possibilities.is_candidate(category, position, value):
-                    open_positions.append(position)
+            open_positions = possibilities.positions_for(category, value)
 
             # A position running empty is caught by eliminate(); this is the
             # mirror case, where a value has nowhere left to go.
