@@ -215,6 +215,38 @@ def test_and_reports_no_change_once_children_are_settled():
     assert constraint.propagate(grid) is False
 
 
+# Mixed children: the absolute clue runs first and knocks green off house 1,
+# and the relative clue immediately feeds on that narrower green inside the
+# same pass — so blue loses house 2 as well as house 1.
+def test_and_mixes_absolute_and_relative_children():
+    grid = make_grid()
+
+    changed = And([
+        AbsolutePosition(("color", "green"), "!=", 1),
+        RelativePosition(("color", "green"), ("color", "blue"), "==", 1),
+    ]).propagate(grid)
+
+    assert changed is True
+    assert grid.positions_for("color", "green") == [2, 3]
+    assert grid.positions_for("color", "blue") == [3, 4]
+
+
+# And recurses into nested And, so a bundled group prunes like a flat list.
+def test_and_recurses_into_nested_and():
+    grid = make_grid()
+
+    And([
+        And([
+            AbsolutePosition(("color", "green"), "!=", 1),
+            RelativePosition(("color", "green"), ("color", "blue"), "==", 1),
+        ]),
+        AbsolutePosition(("color", "blue"), "!=", 4),
+    ]).propagate(grid)
+
+    assert grid.positions_for("color", "green") == [2, 3]
+    assert grid.positions_for("color", "blue") == [3]
+
+
 # Documents the current stub. Or needs speculation, which isn't built yet.
 def test_or_is_not_implemented_yet():
     grid = make_grid()
