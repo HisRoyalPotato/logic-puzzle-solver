@@ -48,7 +48,8 @@ simple words when I need clarification on anything about the project.
 My goal is to be able to explain every part of this project in depth
 in a technical interview. A working feature I don't understand is
 worse than no feature at all. Please optimize for my understanding,
-not for speed of completion.
+not for speed of completion. Also, after changes are made explain them 
+in simple language and the implications of them.
 
 ### Before committing code
 Before committing changes to core logic, make sure I've confirmed I
