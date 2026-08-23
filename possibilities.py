@@ -15,6 +15,18 @@ class PossibilityGrid:
             for position in puzzle.positions:
                 self._candidates[(category, position)] = set(values)
 
+    def copy(self):
+        """A separate grid holding the same candidates. Eliminating on one
+        never affects the other — Or uses this to try a branch for real
+        without committing to it. The puzzle is shared, not copied: it never
+        changes, so both grids can safely read the same one."""
+        clone = PossibilityGrid(self.puzzle)
+        for key, values in self._candidates.items():
+            # set(values) builds a NEW set. Assigning `values` directly would
+            # leave both grids pointing at one shared set.
+            clone._candidates[key] = set(values)
+        return clone
+
     def candidates(self, category, position):
         """Copy of the current possible values for (category, position)."""
         return set(self._candidates[(category, position)])

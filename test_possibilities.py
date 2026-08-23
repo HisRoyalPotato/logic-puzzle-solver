@@ -108,3 +108,44 @@ def test_positions_for_can_return_empty():
         grid.eliminate("color", position, "red")
 
     assert grid.positions_for("color", "red") == []
+
+
+# A copy starts out matching the original exactly.
+def test_copy_starts_identical():
+    grid = make_grid()
+    grid.eliminate("color", 1, "red")
+
+    clone = grid.copy()
+
+    for position in [1, 2, 3]:
+        assert clone.candidates("color", position) == grid.candidates("color", position)
+
+
+# The whole point of copy(): trying something on the clone leaves the real
+# grid untouched. This is what catches a shallow copy.
+def test_eliminating_on_the_copy_leaves_the_original_alone():
+    grid = make_grid()
+    clone = grid.copy()
+
+    clone.eliminate("color", 1, "red")
+
+    assert clone.is_candidate("color", 1, "red") is False
+    assert grid.is_candidate("color", 1, "red") is True
+
+
+# And the other direction, so neither grid can leak into the other.
+def test_eliminating_on_the_original_leaves_the_copy_alone():
+    grid = make_grid()
+    clone = grid.copy()
+
+    grid.eliminate("color", 1, "red")
+
+    assert grid.is_candidate("color", 1, "red") is False
+    assert clone.is_candidate("color", 1, "red") is True
+
+
+# The puzzle is shared on purpose — it never changes, so copying it is waste.
+def test_copy_shares_the_puzzle():
+    grid = make_grid()
+
+    assert grid.copy().puzzle is grid.puzzle
