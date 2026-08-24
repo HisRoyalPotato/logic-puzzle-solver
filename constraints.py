@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import operator as op
 
+from possibilities import Contradiction
+from rules import apply_all_rules
+
 
 # Maps the operator strings constraints use onto Python's comparison functions.
 _OPERATORS = {
@@ -148,6 +151,17 @@ class And(Constraint):
         return changed
 
 
+def _settle_branch(possibilities, constraint):
+    """Push one branch as far as it goes on its own throwaway grid: the
+    branch's clue plus both puzzle rules, over and over until nothing more
+    falls out. Raises Contradiction if the branch turns out to be impossible."""
+    changed = True
+    while changed:
+        changed = constraint.propagate(possibilities)
+        if apply_all_rules(possibilities):
+            changed = True
+
+
 @dataclass
 class Or(Constraint):
     """Holds if at least one child holds."""
@@ -155,10 +169,43 @@ class Or(Constraint):
     constraints: list
 
     def propagate(self, possibilities):
-        # Not built yet. A candidate is only impossible if it's impossible in
-        # every branch, which needs trial elimination per branch then an
-        # intersection of the results.
-        return False
+        """Try every branch on its own copy. A value is only impossible if
+        every surviving branch says so, so anything at least one branch still
+        allows has to stay."""
+        survivors = []
+        for child in self.constraints:
+            trial = possibilities.copy()
+            try:
+                _settle_branch(trial, child)
+            except Contradiction:
+                continue  # This branch can't happen — drop it and move on.
+            survivors.append(trial)
+
+        # Every branch died, so the Or itself can't hold.
+        if not survivors:
+            raise Contradiction("no branch of this Or can hold")
+
+        return self._keep_union(possibilities, survivors)
+
+    def _keep_union(self, possibilities, survivors):
+        """Cross off values that NO surviving branch still allows. A value even
+        one branch allows must stay — that branch could be the true one. With a
+        single survivor this copies its eliminations across, so 'only one
+        branch left' needs no special case."""
+        puzzle = possibilities.puzzle
+        changed = False
+
+        for category in puzzle.categories:
+            for position in puzzle.positions:
+                # candidates() hands back a copy, so eliminating below can't
+                # disturb what we're looping over.
+                for value in possibilities.candidates(category, position):
+                    if any(s.is_candidate(category, position, value) for s in survivors):
+                        continue
+                    if possibilities.eliminate(category, position, value):
+                        changed = True
+
+        return changed
 
 
 def validate_constraints(puzzle, constraint):

@@ -7,7 +7,7 @@ from constraints import (
     RelativePosition,
     validate_constraints,
 )
-from possibilities import PossibilityGrid
+from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
 
 
@@ -247,14 +247,137 @@ def test_and_recurses_into_nested_and():
     assert grid.positions_for("color", "blue") == [3]
 
 
-# Documents the current stub. Or needs speculation, which isn't built yet.
-def test_or_is_not_implemented_yet():
+# One branch means there's nothing to choose between, so Or acts like the
+# branch itself.
+def test_or_with_a_single_branch_applies_that_branch():
     grid = make_grid()
 
     changed = Or([AbsolutePosition(("color", "red"), "==", 1)]).propagate(grid)
 
+    assert changed is True
+    assert grid.positions_for("color", "red") == [1]
+
+
+# Two live branches that rule out different things agree on nothing, so
+# nothing may be cut. Branch 1 allows house 2, branch 2 allows house 1.
+def test_or_eliminates_nothing_while_both_branches_survive():
+    grid = make_grid()
+
+    changed = Or([
+        AbsolutePosition(("color", "red"), "!=", 1),
+        AbsolutePosition(("color", "red"), "!=", 2),
+    ]).propagate(grid)
+
     assert changed is False
-    assert grid.candidates("color", 1) == {"red", "green", "blue", "yellow"}
+    assert grid.positions_for("color", "red") == [1, 2, 3, 4]
+
+
+# Both branches agree red isn't house 3 or 4, so that much is safe to cut
+# even though which branch is true is still unknown.
+def test_or_cuts_what_every_branch_agrees_on():
+    grid = make_grid()
+
+    Or([
+        AbsolutePosition(("color", "red"), "==", 1),
+        AbsolutePosition(("color", "red"), "==", 2),
+    ]).propagate(grid)
+
+    assert grid.positions_for("color", "red") == [1, 2]
+    # Green survives everywhere: it is free in whichever branch red doesn't take.
+    assert grid.positions_for("color", "green") == [1, 2, 3, 4]
+
+
+# Killing a branch is the whole point. Red is pinned to house 2 up front, so
+# the "red is house 1" branch dies and the other branch is applied for real.
+def test_or_applies_the_only_branch_that_survives():
+    grid = make_grid()
+    AbsolutePosition(("color", "red"), "==", 2).propagate(grid)
+
+    Or([
+        AbsolutePosition(("color", "green"), "==", 2),
+        AbsolutePosition(("color", "green"), "==", 3),
+    ]).propagate(grid)
+
+    assert grid.positions_for("color", "green") == [3]
+
+
+# A branch that only dies once the PUZZLE RULES run, not from its own clue.
+# Blue is squeezed into house 1 only. The "green is house 1" branch clears blue
+# out of house 1, leaving blue homeless — which just eliminate() cannot see.
+def test_or_kills_a_branch_using_the_puzzle_rules():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+    grid = PossibilityGrid(puzzle)
+    grid.eliminate("color", 2, "blue")
+    grid.eliminate("color", 3, "blue")
+
+    Or([
+        AbsolutePosition(("color", "green"), "==", 1),
+        AbsolutePosition(("color", "green"), "==", 2),
+    ]).propagate(grid)
+
+    assert grid.positions_for("color", "green") == [2]
+
+
+# Every branch impossible means the Or itself is impossible.
+def test_or_raises_when_every_branch_dies():
+    grid = make_grid()
+    AbsolutePosition(("color", "red"), "==", 4).propagate(grid)
+
+    with pytest.raises(Contradiction, match="no branch"):
+        Or([
+            AbsolutePosition(("color", "red"), "==", 1),
+            AbsolutePosition(("color", "red"), "==", 2),
+        ]).propagate(grid)
+
+
+# An Or of nothing has no way to be true.
+def test_or_with_no_branches_is_impossible():
+    with pytest.raises(Contradiction, match="no branch"):
+        Or([]).propagate(make_grid())
+
+
+# The trial copies must not leak: a dead branch's eliminations are thrown away.
+def test_or_does_not_leak_a_dead_branch_into_the_real_grid():
+    grid = make_grid()
+    AbsolutePosition(("color", "red"), "==", 1).propagate(grid)
+
+    # Branch 1 (green in house 1) is impossible — red already owns house 1.
+    Or([
+        AbsolutePosition(("color", "green"), "==", 1),
+        AbsolutePosition(("color", "green"), "==", 2),
+    ]).propagate(grid)
+
+    # If the dead branch had leaked, red would have been cleared from house 1.
+    assert grid.positions_for("color", "red") == [1]
+    assert grid.positions_for("color", "green") == [2]
+
+
+# Once settled, a second pass must report no change so the outer loop can stop.
+def test_or_propagate_is_idempotent():
+    grid = make_grid()
+    constraint = Or([
+        AbsolutePosition(("color", "red"), "==", 1),
+        AbsolutePosition(("color", "red"), "==", 2),
+    ])
+
+    assert constraint.propagate(grid) is True
+    assert constraint.propagate(grid) is False
+
+
+# "Next to" is the clue Or exists for: left of OR right of.
+def test_or_expresses_next_to():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+    grid = PossibilityGrid(puzzle)
+    AbsolutePosition(("color", "red"), "==", 1).propagate(grid)
+
+    # Green is next to red.
+    Or([
+        RelativePosition(("color", "green"), ("color", "red"), "==", 1),
+        RelativePosition(("color", "green"), ("color", "red"), "==", -1),
+    ]).propagate(grid)
+
+    # Red is house 1, so "green immediately right of red" is the only option.
+    assert grid.positions_for("color", "green") == [2]
 
 
 # validate_constraints guards the boundary where AI-written constraints arrive.
