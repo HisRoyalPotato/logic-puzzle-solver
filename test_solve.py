@@ -3,11 +3,8 @@ import pytest
 from constraints import AbsolutePosition, RelativePosition
 from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
-from solve import (
-    apply_value_must_be_somewhere,
-    apply_value_used_once,
-    propagate_until_stable,
-)
+from rules import apply_value_must_be_somewhere, apply_value_used_once
+from solve import propagate_until_stable
 
 
 def make_grid(categories, num_positions):
