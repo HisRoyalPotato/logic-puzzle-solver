@@ -1,6 +1,6 @@
 import pytest
 
-from constraints import AbsolutePosition, RelativePosition
+from constraints import AbsolutePosition, And, Or, RelativePosition
 from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
 from rules import apply_value_must_be_somewhere, apply_value_used_once
@@ -216,3 +216,60 @@ def test_propagation_terminates_on_a_single_position_puzzle():
     propagate_until_stable(grid, [])
 
     assert grid.forced_value("color", 1) == "red"
+
+
+# Even with the Or listed FIRST, the definite clue must run before it. The spy
+# records how narrow red already was the first time the Or was reached.
+def test_definite_clues_run_before_speculative_ones():
+    width_when_or_first_ran = []
+
+    class SpyOr(Or):
+        def propagate(self, possibilities):
+            width_when_or_first_ran.append(len(possibilities.positions_for("color", "red")))
+            return super().propagate(possibilities)
+
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [
+        SpyOr([
+            AbsolutePosition(("color", "green"), "==", 2),
+            AbsolutePosition(("color", "green"), "==", 3),
+        ]),
+        AbsolutePosition(("color", "red"), "==", 1),
+    ]
+
+    propagate_until_stable(grid, clues)
+
+    # Red was already pinned to one house before the Or ever ran.
+    assert width_when_or_first_ran[0] == 1
+
+
+# An And wrapping an Or is expensive too, so it waits for phase two.
+def test_and_containing_an_or_counts_as_speculative():
+    cheap = And([AbsolutePosition(("color", "red"), "==", 1)])
+    costly = And([Or([AbsolutePosition(("color", "red"), "==", 1)])])
+
+    assert cheap.is_speculative() is False
+    assert costly.is_speculative() is True
+    assert AbsolutePosition(("color", "red"), "==", 1).is_speculative() is False
+
+
+# Phase order is an optimisation, never a change of answer: the same clues in
+# any order must settle on the same grid.
+def test_clue_order_does_not_change_the_answer():
+    clues = [
+        AbsolutePosition(("color", "red"), "==", 1),
+        Or([
+            AbsolutePosition(("color", "green"), "==", 2),
+            AbsolutePosition(("color", "green"), "==", 1),
+        ]),
+        RelativePosition(("color", "blue"), ("color", "green"), ">"),
+    ]
+
+    results = []
+    for order in [clues, list(reversed(clues)), [clues[1], clues[0], clues[2]]]:
+        grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+        propagate_until_stable(grid, order)
+        results.append(solution_for(grid, "color"))
+
+    assert results[0] == {1: "red", 2: "green", 3: "blue"}
+    assert results[0] == results[1] == results[2]

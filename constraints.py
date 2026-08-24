@@ -38,6 +38,12 @@ class Constraint(ABC):
         """Rule out candidates this clue proves impossible.
         Returns True if anything was actually eliminated."""
 
+    def is_speculative(self):
+        """True if working this clue out needs guessing at branches and
+        copying the grid. Only Or does; everything else reads straight off
+        the grid. The solver runs the cheap clues first."""
+        return False
+
 
 @dataclass
 class AbsolutePosition(Constraint):
@@ -150,6 +156,10 @@ class And(Constraint):
                 changed = True
         return changed
 
+    def is_speculative(self):
+        """An And is only as cheap as its most expensive child."""
+        return any(child.is_speculative() for child in self.constraints)
+
 
 def _settle_branch(possibilities, constraint):
     """Push one branch as far as it goes on its own throwaway grid: the
@@ -186,6 +196,10 @@ class Or(Constraint):
             raise Contradiction("no branch of this Or can hold")
 
         return self._keep_union(possibilities, survivors)
+
+    def is_speculative(self):
+        """Or is the one clue that has to guess and copy the grid."""
+        return True
 
     def _keep_union(self, possibilities, survivors):
         """Cross off values that NO surviving branch still allows. A value even
