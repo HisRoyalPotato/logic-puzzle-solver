@@ -1,10 +1,10 @@
 import pytest
 
-from constraints import AbsolutePosition, And, Or, RelativePosition
+from constraints import AbsolutePosition, And, InvalidConstraint, Or, RelativePosition
 from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
 from rules import apply_value_must_be_somewhere, apply_value_used_once
-from solve import propagate_until_stable
+from solve import Solution, Status, propagate_until_stable, solve
 
 
 def make_grid(categories, num_positions):
@@ -195,18 +195,39 @@ def test_relative_clue_with_an_impossible_offset_is_caught_by_the_loop():
         propagate_until_stable(grid, clues)
 
 
-# Known blind spot, recorded on purpose. Arc consistency only compares pairs of
-# positions, and "position 1 equals position 1" looks legal to it — it has no
-# idea one house can't be two colours. Safe, because being too cautious only
-# leaves the puzzle unsolved; it never crosses off a correct answer.
-def test_same_category_equals_is_not_detected_as_impossible():
+# Was a known blind spot until 2026-08-25. Arc consistency only compares pairs
+# of positions, and "house 1 equals house 1" looked legal to it — it had no
+# idea one house can't be two colours. allows() now says so outright, so red
+# runs out of houses and the puzzle is correctly called impossible.
+def test_same_category_equals_is_detected_as_impossible():
     grid = make_grid({"color": ["red", "green", "blue"]}, 3)
     clues = [RelativePosition(("color", "red"), ("color", "blue"), "==", 0)]
+
+    with pytest.raises(Contradiction):
+        propagate_until_stable(grid, clues)
+
+
+# The guard must not fire when both sides are the SAME value — "red is where
+# red is" is trivially true, and sharing a position is exactly right there.
+def test_same_category_same_value_equals_stays_open():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [RelativePosition(("color", "red"), ("color", "red"), "==", 0)]
 
     propagate_until_stable(grid, clues)
 
     assert grid.positions_for("color", "red") == [1, 2, 3]
-    assert grid.positions_for("color", "blue") == [1, 2, 3]
+
+
+# Offsets are untouched by the guard: red one house left of blue is fine, and
+# the pair-equal case it blocks can never come up at a non-zero offset anyway.
+def test_same_category_with_offset_still_works():
+    grid = make_grid({"color": ["red", "green", "blue"]}, 3)
+    clues = [RelativePosition(("color", "red"), ("color", "blue"), "==", 1)]
+
+    propagate_until_stable(grid, clues)
+
+    assert grid.positions_for("color", "red") == [1, 2]
+    assert grid.positions_for("color", "blue") == [2, 3]
 
 
 # Smallest possible puzzle: the loop must settle instead of spinning forever.
@@ -273,3 +294,123 @@ def test_clue_order_does_not_change_the_answer():
 
     assert results[0] == {1: "red", 2: "green", 3: "blue"}
     assert results[0] == results[1] == results[2]
+
+
+# --- inclusive operators --------------------------------------------------
+
+
+# "<=" keeps its own position, unlike "<" which rules it out.
+def test_absolute_less_than_or_equal_keeps_the_boundary_position():
+    grid = make_color_grid()
+
+    AbsolutePosition(("color", "red"), "<=", 2).propagate(grid)
+
+    assert grid.positions_for("color", "red") == [1, 2]
+
+
+def test_absolute_greater_than_or_equal_keeps_the_boundary_position():
+    grid = make_color_grid()
+
+    AbsolutePosition(("color", "red"), ">=", 3).propagate(grid)
+
+    assert grid.positions_for("color", "red") == [3, 4]
+
+
+# The whole reason to have "<=": the AI can write it without doing off-by-one
+# arithmetic. It must land on exactly what the shifted "<" would have done.
+def test_inclusive_operator_matches_the_shifted_strict_one():
+    inclusive = make_color_grid()
+    strict = make_color_grid()
+
+    AbsolutePosition(("color", "red"), "<=", 2).propagate(inclusive)
+    AbsolutePosition(("color", "red"), "<", 3).propagate(strict)
+
+    assert inclusive.positions_for("color", "red") == strict.positions_for("color", "red")
+
+
+# RelativePosition needed no new code — allows() reads the operator out of the
+# same dict — so this is the test that proves it.
+def test_relative_less_than_or_equal_allows_the_same_position():
+    grid = make_color_grid()
+    clue = RelativePosition(("color", "red"), ("color", "green"), "<=", 0)
+
+    # Same position is legal for "<=" between DIFFERENT categories...
+    assert clue.allows(2, 2) is False  # ...but not within one category.
+    assert clue.allows(2, 3) is True
+
+
+def test_relative_inclusive_across_categories_allows_equal_positions():
+    grid = make_grid({"color": ["red", "green"], "pet": ["cat", "dog"]}, 2)
+    clue = RelativePosition(("color", "red"), ("pet", "cat"), "<=", 0)
+
+    assert clue.allows(1, 1) is True
+
+    clue.propagate(grid)
+    assert grid.positions_for("color", "red") == [1, 2]
+
+
+# --- solve(): the public front door ---------------------------------------
+
+
+# A fully determined puzzle comes back SOLVED with a finished assignment.
+def test_solve_returns_solved_with_an_assignment():
+    puzzle = Puzzle({"color": ["red", "green"]}, 2)
+    clues = [AbsolutePosition(("color", "red"), "==", 1)]
+
+    result = solve(puzzle, clues)
+
+    assert result.status is Status.SOLVED
+    assert result.assignment == {("color", 1): "red", ("color", 2): "green"}
+    assert result.reason is None
+
+
+# Clues that fight each other must REPORT no solution, not raise.
+def test_solve_reports_no_solution_instead_of_raising():
+    puzzle = Puzzle({"color": ["red", "green"]}, 2)
+    clues = [
+        AbsolutePosition(("color", "red"), "==", 1),
+        AbsolutePosition(("color", "red"), "==", 2),
+    ]
+
+    result = solve(puzzle, clues)
+
+    assert result.status is Status.UNSOLVABLE
+    assert result.assignment is None
+    assert "no solution" in result.reason
+
+
+# The same-category fix reaches solve() as a clean UNSOLVABLE too.
+def test_solve_reports_no_solution_for_same_category_equals():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+    clues = [RelativePosition(("color", "red"), ("color", "blue"), "==", 0)]
+
+    result = solve(puzzle, clues)
+
+    assert result.status is Status.UNSOLVABLE
+
+
+# No clues at all: nothing is wrong, there just isn't enough to finish.
+def test_solve_reports_incomplete_when_deductions_run_out():
+    puzzle = Puzzle({"color": ["red", "green"]}, 2)
+
+    result = solve(puzzle, [])
+
+    assert result.status is Status.INCOMPLETE
+    assert result.assignment is None
+    assert "more than one solution" in result.reason
+    # The partial grid still comes back, untouched and fully open.
+    assert result.possibilities.candidates("color", 1) == {"red", "green"}
+
+
+# A clue naming a value the puzzle never defined is a BROKEN clue, not a
+# puzzle without an answer — it must raise, never come back as UNSOLVABLE.
+# Reporting it as UNSOLVABLE would tell a user with a perfectly good puzzle
+# that their puzzle is impossible, when really the AI just misread a word.
+def test_solve_raises_on_a_clue_naming_an_unknown_value():
+    puzzle = Puzzle({"color": ["red", "green"]}, 2)
+    clues = [AbsolutePosition(("color", "purple"), "==", 1)]
+
+    with pytest.raises(InvalidConstraint) as caught:
+        solve(puzzle, clues)
+
+    assert caught.value.problems[0].allowed == ["red", "green"]

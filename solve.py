@@ -1,4 +1,92 @@
+from dataclasses import dataclass
+from enum import Enum
+
+from constraints import validate_constraints
+from possibilities import Contradiction, PossibilityGrid
 from rules import apply_all_rules
+
+
+class Status(Enum):
+    """How a solve attempt ended. An Enum is a fixed menu of allowed values:
+    Status.SOLVEDD is an instant crash, where the string "solvedd" would just
+    quietly never match anything."""
+
+    SOLVED = "solved"          # every position pinned to exactly one value
+    UNSOLVABLE = "unsolvable"  # the clues contradict each other
+    INCOMPLETE = "incomplete"  # ran out of deductions with choices still open
+
+
+@dataclass
+class Solution:
+    """What solve() hands back. Always returned — never an exception — so a
+    caller (the web layer, later) can just read `status` and react."""
+
+    status: Status
+    possibilities: PossibilityGrid
+    assignment: dict | None = None  # (category, position) -> value, only when SOLVED
+    reason: str | None = None       # plain-language why, when not SOLVED
+
+
+def solve(puzzle, constraints):
+    """Public front door. Solves `puzzle` under `constraints` and always
+    returns a Solution saying what happened.
+
+    A Contradiction means the clues fight each other, so no solution exists —
+    that becomes UNSOLVABLE rather than escaping as an exception.
+
+    Clues naming things the puzzle never defined still RAISE InvalidConstraint,
+    on purpose. That is a different failure: the AI mistranslated, so nothing
+    is known about whether the puzzle has an answer. Callers should retry the
+    translation, not tell the user their puzzle is impossible."""
+    validate_constraints(puzzle, constraints)
+
+    possibilities = PossibilityGrid(puzzle)
+
+    try:
+        propagate_until_stable(possibilities, constraints)
+    except Contradiction as contradiction:
+        # The grid is left mid-deduction on purpose — it shows how far we got
+        # before the clues collided.
+        return Solution(
+            status=Status.UNSOLVABLE,
+            possibilities=possibilities,
+            reason=f"no solution: {contradiction}",
+        )
+
+    assignment = _read_assignment(possibilities)
+    if assignment is None:
+        return Solution(
+            status=Status.INCOMPLETE,
+            possibilities=possibilities,
+            reason=(
+                "ran out of deductions with choices still open: this puzzle "
+                "either has more than one solution, or needs guessing to "
+                "finish and the solver only deduces"
+            ),
+        )
+
+    return Solution(
+        status=Status.SOLVED,
+        possibilities=possibilities,
+        assignment=assignment,
+    )
+
+
+def _read_assignment(possibilities):
+    """The finished answer as (category, position) -> value, or None if any
+    position still has more than one candidate. Deciding SOLVED vs INCOMPLETE
+    is the same question as "did every cell come out forced?", so one pass
+    answers both."""
+    puzzle = possibilities.puzzle
+    assignment = {}
+
+    for category in puzzle.categories:
+        for position in puzzle.positions:
+            if not possibilities.is_forced(category, position):
+                return None
+            assignment[(category, position)] = possibilities.forced_value(category, position)
+
+    return assignment
 
 
 def propagate_until_stable(possibilities, constraints):

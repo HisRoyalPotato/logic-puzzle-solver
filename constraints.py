@@ -12,6 +12,8 @@ _OPERATORS = {
     "!=": op.ne,
     "<": op.lt,
     ">": op.gt,
+    "<=": op.le,
+    ">=": op.ge,
 }
 
 
@@ -59,31 +61,23 @@ class AbsolutePosition(Constraint):
     def propagate(self, possibilities):
         category, value = self.category_value
         puzzle = possibilities.puzzle
+        compare = _OPERATORS[self.operator]
         changed = False
 
-        if self.operator == "==":
-            # Pinned here, so it can't be anywhere else — and nothing else can
-            # be here, since a category maps one-to-one onto positions.
-            for position in puzzle.positions:
-                if position != self.position and possibilities.eliminate(category, position, value):
+        # Every operator does at least this: cross the value off each position
+        # where the comparison comes out false. That alone fully handles
+        # "!=", "<", ">", "<=" and ">=".
+        for position in puzzle.positions:
+            if not compare(position, self.position):
+                if possibilities.eliminate(category, position, value):
                     changed = True
+
+        # "==" is the only one that pins both directions. The loop above
+        # already said "this value lives nowhere else"; this adds the mirror
+        # fact, that nothing else in the category can live here.
+        if self.operator == "==":
             for other_value in puzzle.categories[category]:
                 if other_value != value and possibilities.eliminate(category, self.position, other_value):
-                    changed = True
-
-        elif self.operator == "!=":
-            if possibilities.eliminate(category, self.position, value):
-                changed = True
-
-        elif self.operator == "<":
-            # Must sit below self.position, so rule it out at or above.
-            for position in puzzle.positions:
-                if position >= self.position and possibilities.eliminate(category, position, value):
-                    changed = True
-
-        elif self.operator == ">":
-            for position in puzzle.positions:
-                if position <= self.position and possibilities.eliminate(category, position, value):
                     changed = True
 
         return changed
@@ -103,6 +97,15 @@ class RelativePosition(Constraint):
 
     def allows(self, position_a, position_b):
         """True if this pair of positions would satisfy the clue."""
+        # Two DIFFERENT values of the SAME category can never share a position
+        # — one house has one colour. Comparing numbers can't see that, so say
+        # it outright. (Same category AND same value is just a clue about
+        # itself, and sharing a position is fine there.)
+        same_category = self.a[0] == self.b[0]
+        different_values = self.a[1] != self.b[1]
+        if same_category and different_values and position_a == position_b:
+            return False
+
         compare = _OPERATORS[self.operator]
         return compare(position_a + self.offset, position_b)
 
@@ -222,24 +225,89 @@ class Or(Constraint):
         return changed
 
 
-def validate_constraints(puzzle, constraint):
-    """Check that every (category, value) `constraint` references actually
-    exists in `puzzle`. Raises ValueError on the first bad reference found."""
+@dataclass
+class BadReference:
+    """One thing a clue named that the puzzle never defined. Deliberately
+    pieces, not a sentence: an automatic retry needs to read `allowed` and feed
+    it back to the AI, and digging that out of prose would be miserable."""
+
+    clue: object   # the constraint that named it
+    kind: str      # "category" or "value" — which half was wrong
+    category: str  # the category name the clue used
+    value: str     # the value the clue used
+    allowed: list  # what it could have said instead
+
+
+class InvalidConstraint(ValueError):
+    """Clues named things this puzzle never defined — the AI translation layer
+    got something wrong. NOT the same as "this puzzle has no solution": here
+    the solver never saw a real puzzle, so it knows nothing about whether an
+    answer exists. Tell the AI to try again; don't tell the user their puzzle
+    is broken.
+
+    Subclasses ValueError so anything already catching ValueError still works.
+    `problems` lists EVERY bad reference, so one trip back to the AI can fix
+    them all instead of one trip per mistake."""
+
+    def __init__(self, problems):
+        self.problems = problems
+        super().__init__("; ".join(_describe(problem) for problem in problems))
+
+
+def _describe(problem):
+    """One bad reference as a readable sentence, for humans and logs. The
+    structured fields on BadReference are what code should read."""
+    if problem.kind == "category":
+        return f"'{problem.category}' is not a category in this puzzle (have: {problem.allowed})"
+    return (
+        f"'{problem.value}' is not a valid value for category "
+        f"'{problem.category}' (have: {problem.allowed})"
+    )
+
+
+def validate_constraints(puzzle, constraints):
+    """The guard on the boundary where AI-written clues arrive. Plain Python,
+    no AI: checks every (category, value) the clues mention against what the
+    puzzle actually defines. Raises InvalidConstraint listing every problem
+    found, or returns quietly if the clues are clean."""
+    problems = []
+    for constraint in constraints:
+        _collect_bad_references(puzzle, constraint, problems)
+
+    if problems:
+        raise InvalidConstraint(problems)
+
+
+def _collect_bad_references(puzzle, constraint, problems):
+    """Walk one clue (and any children) adding every bad reference to
+    `problems`. Collects rather than raising, so one pass finds them all."""
     if isinstance(constraint, AbsolutePosition):
-        _check_value_exists(puzzle, *constraint.category_value)
+        _check_reference(puzzle, constraint, constraint.category_value, problems)
     elif isinstance(constraint, RelativePosition):
-        _check_value_exists(puzzle, *constraint.a)
-        _check_value_exists(puzzle, *constraint.b)
+        _check_reference(puzzle, constraint, constraint.a, problems)
+        _check_reference(puzzle, constraint, constraint.b, problems)
     elif isinstance(constraint, (And, Or)):
         for child in constraint.constraints:
-            validate_constraints(puzzle, child)
+            _collect_bad_references(puzzle, child, problems)
     else:
+        # Not an AI mistake — something handed us an object that isn't a clue
+        # at all. That's a bug in the calling code, so fail immediately.
         raise TypeError(f"unknown constraint type: {type(constraint).__name__}")
 
 
-def _check_value_exists(puzzle, category, value):
-    """Raise ValueError if `value` isn't a legal value for `category` in `puzzle`."""
+def _check_reference(puzzle, clue, category_value, problems):
+    """Record a BadReference if (category, value) isn't real in this puzzle."""
+    category, value = category_value
+
     if category not in puzzle.categories:
-        raise ValueError(f"'{category}' is not a category in this puzzle")
+        problems.append(BadReference(
+            clue=clue, kind="category", category=category, value=value,
+            allowed=list(puzzle.categories),
+        ))
+        return  # No point checking the value against a category that doesn't exist.
+
     if value not in puzzle.categories[category]:
-        raise ValueError(f"'{value}' is not a valid value for category '{category}'")
+        problems.append(BadReference(
+            clue=clue, kind="value", category=category, value=value,
+            allowed=list(puzzle.categories[category]),
+        ))

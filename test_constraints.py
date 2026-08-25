@@ -5,6 +5,8 @@ from constraints import (
     And,
     Or,
     RelativePosition,
+    BadReference,
+    InvalidConstraint,
     validate_constraints,
 )
 from possibilities import Contradiction, PossibilityGrid
@@ -73,9 +75,10 @@ def test_absolute_propagate_is_idempotent():
 
 
 # Bad operators are caught at construction, not deep inside propagation.
+# ("<=" used to be the example here — it's a real operator now.)
 def test_unsupported_operator_rejected_at_construction():
     with pytest.raises(ValueError, match="unsupported operator"):
-        AbsolutePosition(("color", "red"), "<=", 2)
+        AbsolutePosition(("color", "red"), "=<", 2)
 
     with pytest.raises(ValueError, match="unsupported operator"):
         RelativePosition(("color", "red"), ("color", "green"), "~", 1)
@@ -382,17 +385,17 @@ def test_or_expresses_next_to():
 
 # validate_constraints guards the boundary where AI-written constraints arrive.
 def test_validate_accepts_a_well_formed_constraint():
-    validate_constraints(make_puzzle(), AbsolutePosition(("color", "red"), "==", 1))
+    validate_constraints(make_puzzle(), [AbsolutePosition(("color", "red"), "==", 1)])
 
 
 def test_validate_rejects_unknown_category():
     with pytest.raises(ValueError, match="not a category"):
-        validate_constraints(make_puzzle(), AbsolutePosition(("drink", "tea"), "==", 1))
+        validate_constraints(make_puzzle(), [AbsolutePosition(("drink", "tea"), "==", 1)])
 
 
 def test_validate_rejects_unknown_value():
     with pytest.raises(ValueError, match="not a valid value"):
-        validate_constraints(make_puzzle(), AbsolutePosition(("color", "purple"), "==", 1))
+        validate_constraints(make_puzzle(), [AbsolutePosition(("color", "purple"), "==", 1)])
 
 
 # Both sides of a relative clue get checked.
@@ -400,16 +403,69 @@ def test_validate_checks_both_ends_of_relative_position():
     constraint = RelativePosition(("color", "red"), ("color", "purple"), "==", 1)
 
     with pytest.raises(ValueError, match="not a valid value"):
-        validate_constraints(make_puzzle(), constraint)
+        validate_constraints(make_puzzle(), [constraint])
 
 
 def test_validate_recurses_into_combinators():
     nested = And([Or([AbsolutePosition(("color", "purple"), "==", 1)])])
 
     with pytest.raises(ValueError, match="not a valid value"):
-        validate_constraints(make_puzzle(), nested)
+        validate_constraints(make_puzzle(), [nested])
 
 
 def test_validate_rejects_unknown_constraint_type():
     with pytest.raises(TypeError, match="unknown constraint type"):
-        validate_constraints(make_puzzle(), object())
+        validate_constraints(make_puzzle(), [object()])
+
+
+# --- InvalidConstraint: the AI trust boundary ------------------------------
+
+
+# Still a ValueError underneath, so older `except ValueError` keeps working.
+def test_invalid_constraint_is_still_a_value_error():
+    assert issubclass(InvalidConstraint, ValueError)
+
+
+# The point of the whole thing: pieces a retry can read, not a sentence to parse.
+def test_invalid_constraint_carries_structured_pieces():
+    clue = AbsolutePosition(("color", "purple"), "==", 1)
+
+    with pytest.raises(InvalidConstraint) as caught:
+        validate_constraints(make_puzzle(), [clue])
+
+    problem = caught.value.problems[0]
+    assert problem == BadReference(
+        clue=clue, kind="value", category="color", value="purple",
+        allowed=["red", "green", "blue", "yellow"],
+    )
+
+
+# An unknown CATEGORY reports the category names as the alternatives.
+def test_unknown_category_offers_the_known_categories():
+    with pytest.raises(InvalidConstraint) as caught:
+        validate_constraints(make_puzzle(), [AbsolutePosition(("drink", "tea"), "==", 1)])
+
+    problem = caught.value.problems[0]
+    assert problem.kind == "category"
+    assert "color" in problem.allowed
+
+
+# Every mistake at once, so the AI gets one retry instead of one per mistake.
+def test_all_problems_are_reported_together():
+    clues = [
+        AbsolutePosition(("color", "purple"), "==", 1),
+        RelativePosition(("color", "orange"), ("drink", "tea"), "<", 0),
+    ]
+
+    with pytest.raises(InvalidConstraint) as caught:
+        validate_constraints(make_puzzle(), clues)
+
+    assert [p.value for p in caught.value.problems] == ["purple", "orange", "tea"]
+
+
+# Clean clues raise nothing, even in bulk.
+def test_validate_accepts_a_list_of_good_constraints():
+    validate_constraints(make_puzzle(), [
+        AbsolutePosition(("color", "red"), "==", 1),
+        RelativePosition(("color", "green"), ("color", "blue"), "<", 0),
+    ])
