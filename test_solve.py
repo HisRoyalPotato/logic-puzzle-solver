@@ -4,7 +4,14 @@ from constraints import AbsolutePosition, And, InvalidConstraint, Or, RelativePo
 from possibilities import Contradiction, PossibilityGrid
 from puzzle import Puzzle
 from rules import apply_value_must_be_somewhere, apply_value_used_once
-from solve import Solution, Status, propagate_until_stable, solve
+from solve import (
+    Solution,
+    Status,
+    deduce_until_stable,
+    propagate_until_stable,
+    shave,
+    solve,
+)
 
 
 def make_grid(categories, num_positions):
@@ -414,3 +421,53 @@ def test_solve_raises_on_a_clue_naming_an_unknown_value():
         solve(puzzle, clues)
 
     assert caught.value.problems[0].allowed == ["red", "green"]
+
+
+# --- shaving: proof by contradiction --------------------------------------
+
+
+# With nothing to contradict, shaving must invent nothing. Assuming a value
+# here never breaks anything, so every trial survives and is thrown away.
+def test_shave_finds_nothing_on_a_puzzle_with_no_clues():
+    grid = make_color_grid()
+
+    assert shave(grid, []) is False
+    assert grid.positions_for("color", "red") == [1, 2, 3, 4]
+
+
+# Nothing left to assume once every cell is down to one value.
+def test_shave_returns_false_on_a_finished_puzzle():
+    puzzle = Puzzle({"color": ["red", "green"]}, 2)
+    grid = PossibilityGrid(puzzle)
+    clues = [AbsolutePosition(("color", "red"), "==", 1)]
+    propagate_until_stable(grid, clues)
+
+    assert shave(grid, clues) is False
+
+
+# When shaving has nothing to add, the full toolkit must land exactly where
+# plain propagation did — shaving may only ever narrow, never widen.
+def test_deduce_matches_propagate_when_shaving_adds_nothing():
+    clues = [AbsolutePosition(("color", "red"), "==", 1)]
+
+    propagated = make_color_grid()
+    propagate_until_stable(propagated, clues)
+
+    deduced = make_color_grid()
+    deduce_until_stable(deduced, clues)
+
+    for position in propagated.puzzle.positions:
+        assert deduced.candidates("color", position) == propagated.candidates("color", position)
+
+
+# Shaving must never cross off a value a real solution needs. Red at house 2
+# is perfectly possible here, so no amount of assuming may remove it.
+def test_shave_keeps_candidates_that_a_real_solution_uses():
+    grid = make_color_grid()
+    clues = [AbsolutePosition(("color", "green"), "==", 1)]
+    propagate_until_stable(grid, clues)
+
+    shave(grid, clues)
+
+    assert grid.is_candidate("color", 2, "red")
+    assert grid.is_candidate("color", 3, "red")

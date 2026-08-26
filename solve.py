@@ -43,7 +43,7 @@ def solve(puzzle, constraints):
     possibilities = PossibilityGrid(puzzle)
 
     try:
-        propagate_until_stable(possibilities, constraints)
+        deduce_until_stable(possibilities, constraints)
     except Contradiction as contradiction:
         # The grid is left mid-deduction on purpose — it shows how far we got
         # before the clues collided.
@@ -125,3 +125,72 @@ def _run_until_stable(possibilities, constraints):
         # so they run every pass no matter what the clues say.
         if apply_all_rules(possibilities):
             changed = True
+
+
+def deduce_until_stable(possibilities, constraints):
+    """Everything the solver knows how to deduce, run to a fixed point: plain
+    propagation first, then shaving, alternating until neither finds anything.
+
+    Kept separate from propagate_until_stable on purpose. Shaving runs
+    propagate_until_stable on its trial grids, so if shaving lived inside that
+    function it would call itself forever. Splitting them also keeps shaving
+    exactly one level deep: a trial never shaves inside a trial, so every
+    refutation stays a short chain a person can follow."""
+    while True:
+        propagate_until_stable(possibilities, constraints)
+
+        # Only pay for shaving once the cheap deductions are exhausted.
+        if not shave(possibilities, constraints):
+            return
+
+
+def shave(possibilities, constraints):
+    """Proof by contradiction, one candidate at a time: assume a candidate is
+    true, propagate, and if the puzzle explodes then that candidate was never
+    possible — so cross it off. Returns True if anything was eliminated.
+
+    Only ever REFUTES. A trial that survives proves nothing (other candidates
+    might survive too), so it is thrown away. That refusal is what keeps every
+    conclusion a proof rather than a guess."""
+    puzzle = possibilities.puzzle
+    changed = False
+
+    for category in puzzle.categories:
+        for position in puzzle.positions:
+            # candidates() hands back a copy, so refuting below can't disturb
+            # what we're looping over.
+            for value in possibilities.candidates(category, position):
+                if possibilities.is_forced(category, position):
+                    break  # Down to one value; nothing left here to test.
+
+                # An earlier refutation this round may have already killed it.
+                if not possibilities.is_candidate(category, position, value):
+                    continue
+
+                if _survives_assumption(possibilities, constraints, category, position, value):
+                    continue
+
+                if possibilities.eliminate(category, position, value):
+                    changed = True
+
+    return changed
+
+
+def _survives_assumption(possibilities, constraints, category, position, value):
+    """True if pinning `value` at (category, position) leaves a workable
+    puzzle. False means assuming it broke the puzzle, which proves it
+    impossible. Runs on a throwaway copy, so the real grid is untouched
+    either way."""
+    trial = possibilities.copy()
+
+    # Pin the assumption by clearing every other candidate from that spot.
+    for other_value in trial.candidates(category, position):
+        if other_value != value:
+            trial.eliminate(category, position, other_value)
+
+    try:
+        propagate_until_stable(trial, constraints)
+    except Contradiction:
+        return False
+
+    return True
