@@ -4,6 +4,7 @@ from enum import Enum
 from constraints import validate_constraints
 from possibilities import Contradiction, PossibilityGrid
 from rules import apply_all_rules
+from verify import VerificationFailed, verify
 
 
 class Status(Enum):
@@ -63,6 +64,14 @@ def solve(puzzle, constraints):
                 "either has more than one solution, or needs guessing to "
                 "finish and the solver only deduces"
             ),
+        )
+
+    # Last line of defence. A wrong answer here is a solver bug, not a fact
+    # about the puzzle, so it blows up loudly instead of being reported.
+    complaints = verify(puzzle, constraints, assignment)
+    if complaints:
+        raise VerificationFailed(
+            "solver produced an answer that breaks its own clues: " + "; ".join(complaints)
         )
 
     return Solution(
