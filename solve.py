@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from constraints import validate_constraints
-from deduction import Rule, SubProof, relevant
+from deduction import Rule, SubProof, group_steps, relevant
 from possibilities import Contradiction, PossibilityGrid
 from rules import apply_all_rules
-from verify import VerificationFailed, verify
+from verify import VerificationFailed, verify, verify_trace
 
 
 class Status(Enum):
@@ -27,6 +27,11 @@ class Solution:
     possibilities: PossibilityGrid
     assignment: dict | None = None  # (category, position) -> value, only when SOLVED
     reason: str | None = None       # plain-language why, when not SOLVED
+
+    # The deduction chain, grouped so neighbouring steps that share a reason
+    # read as one thought. Present for ALL THREE outcomes: a user whose puzzle
+    # is impossible needs the explanation most of all.
+    trace: list | None = None
 
 
 def solve(puzzle, constraints):
@@ -53,6 +58,7 @@ def solve(puzzle, constraints):
             status=Status.UNSOLVABLE,
             possibilities=possibilities,
             reason=f"no solution: {contradiction}",
+            trace=_checked_trace(puzzle, possibilities),
         )
 
     assignment = _read_assignment(possibilities)
@@ -65,6 +71,7 @@ def solve(puzzle, constraints):
                 "either has more than one solution, or needs guessing to "
                 "finish and the solver only deduces"
             ),
+            trace=_checked_trace(puzzle, possibilities),
         )
 
     # Last line of defence. A wrong answer here is a solver bug, not a fact
@@ -79,7 +86,28 @@ def solve(puzzle, constraints):
         status=Status.SOLVED,
         possibilities=possibilities,
         assignment=assignment,
+        trace=_checked_trace(puzzle, possibilities),
     )
+
+
+def _checked_trace(puzzle, possibilities):
+    """The deduction chain, proved honest and then grouped for reading.
+
+    Every outcome goes through here, not just SOLVED. A trace is a claim about
+    what the solver did, and a claim nobody checks is worth little — the same
+    reasoning that produced verify(). Replaying it catches a step recorded
+    against the wrong cell, a lost step and a duplicated one, none of which
+    show up in the final answer.
+    """
+    complaints = verify_trace(puzzle, possibilities.steps, possibilities)
+    if complaints:
+        raise VerificationFailed(
+            "solver produced a trace that does not match what it did: " + "; ".join(complaints)
+        )
+
+    # Grouping is a logical judgement about which steps belong together, so it
+    # happens here rather than being left to the AI that words them later.
+    return group_steps(possibilities.steps)
 
 
 def _read_assignment(possibilities):

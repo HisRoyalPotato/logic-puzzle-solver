@@ -12,6 +12,8 @@ ran, a botched grid copy, a misread answer — rather than a misunderstanding
 baked into the clue itself.
 """
 from constraints import _OPERATORS, AbsolutePosition, And, Or, RelativePosition
+from deduction import StepKind
+from possibilities import Contradiction, PossibilityGrid
 
 
 class VerificationFailed(Exception):
@@ -89,3 +91,48 @@ def _position_of(assignment, category_value):
         if assigned_category == category and assigned_value == value:
             return position
     raise KeyError(f"'{value}' was never placed in category '{category}'")
+
+
+def verify_trace(puzzle, steps, finished):
+    """Check the trace is an honest account of what the solver actually did.
+
+    Replays the recorded steps on a fresh grid and confirms they land on the
+    same grid the solver produced. Returns a list of complaints; empty means it
+    holds up.
+
+    Same reasoning as verify() itself: the trace claims to be a proof, and a
+    proof nobody checks is only a claim. This catches a step recorded against
+    the wrong cell, a step that was lost, and a step recorded twice — none of
+    which verify() can see, because they leave the final answer untouched.
+
+    Only top-level steps are replayed. Anything nested happened inside a
+    pretend world that was thrown away, so it never touched the real grid.
+    """
+    complaints = []
+    replay = PossibilityGrid(puzzle)
+
+    for step in steps:
+        if step.kind is not StepKind.ELIMINATE:
+            continue
+        try:
+            removed = replay.eliminate(step.category, step.position, step.value)
+        except Contradiction:
+            # Expected on an impossible puzzle: the trace ends at the collision.
+            break
+        if not removed:
+            complaints.append(
+                f"trace says it removed '{step.value}' from '{step.category}' at "
+                f"position {step.position}, but it was already gone"
+            )
+
+    for category in puzzle.categories:
+        for position in puzzle.positions:
+            expected = finished.candidates(category, position)
+            replayed = replay.candidates(category, position)
+            if replayed != expected:
+                complaints.append(
+                    f"replaying the trace leaves '{category}' at position {position} as "
+                    f"{sorted(replayed)}, but the solver ended with {sorted(expected)}"
+                )
+
+    return complaints
