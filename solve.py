@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from constraints import validate_constraints
+from deduction import Rule, SubProof, relevant
 from possibilities import Contradiction, PossibilityGrid
 from rules import apply_all_rules
 from verify import VerificationFailed, verify
@@ -176,30 +177,51 @@ def shave(possibilities, constraints):
                 if not possibilities.is_candidate(category, position, value):
                     continue
 
-                if _survives_assumption(possibilities, constraints, category, position, value):
-                    continue
+                refutation = _refute_assumption(possibilities, constraints,
+                                                category, position, value)
+                if refutation is None:
+                    continue  # It survived, which proves nothing. Throw it away.
 
-                if possibilities.eliminate(category, position, value):
+                if possibilities.eliminate(category, position, value,
+                                           because=Rule.SHAVING):
                     changed = True
+                    # Hang the proof on the step it justifies, so a reader can
+                    # check the refutation instead of taking it on faith.
+                    possibilities.killed_by(category, position, value).children = [refutation]
 
     return changed
 
 
-def _survives_assumption(possibilities, constraints, category, position, value):
-    """True if pinning `value` at (category, position) leaves a workable
-    puzzle. False means assuming it broke the puzzle, which proves it
-    impossible. Runs on a throwaway copy, so the real grid is untouched
-    either way."""
+def _refute_assumption(possibilities, constraints, category, position, value):
+    """Try pinning `value` at (category, position) and see if the puzzle breaks.
+
+    Returns a SubProof if assuming it led to a contradiction — that is a proof
+    the value was never possible. Returns None if the assumption survived,
+    which proves nothing at all (other candidates might survive too), so the
+    whole trial is discarded. Runs on a throwaway copy, so the real grid is
+    untouched either way.
+    """
     trial = possibilities.copy()
 
-    # Pin the assumption by clearing every other candidate from that spot.
+    # The "suppose..." line the refutation argues against. Recorded first so it
+    # reads as an assumption rather than as a deduction.
+    assumption = trial.record_suppose(category, position, value)
+
+    # Pin it by clearing every other candidate from that spot.
     for other_value in trial.candidates(category, position):
         if other_value != value:
-            trial.eliminate(category, position, other_value)
+            trial.eliminate(category, position, other_value,
+                            because=Rule.ASSUMPTION, leaning_on=[assumption])
 
     try:
         propagate_until_stable(trial, constraints)
-    except Contradiction:
-        return False
+    except Contradiction as dead_end:
+        # Keep only the chain that actually reached the contradiction. A trial
+        # does plenty of work along the way that never bore on the result.
+        return SubProof(
+            steps=relevant(trial.steps, [dead_end.step]),
+            refuted=True,
+            about=assumption,
+        )
 
-    return True
+    return None

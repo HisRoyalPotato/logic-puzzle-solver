@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import operator as op
 
+from deduction import SubProof, relevant
 from possibilities import Contradiction
 from rules import apply_all_rules
 
@@ -216,27 +217,46 @@ class Or(Constraint):
     def propagate(self, possibilities):
         """Try every branch on its own copy. A value is only impossible if
         every surviving branch says so, so anything at least one branch still
-        allows has to stay."""
+        allows has to stay.
+
+        Every branch keeps a sub-proof, survivors included. That is the part
+        that differs from shaving: there, a surviving trial proves nothing and
+        is thrown away, but here "white died under A, and white died under B"
+        is exactly the argument, so a survivor's chain is load-bearing.
+        """
         survivors = []
+        branches = []  # one SubProof per branch, in the order the clue lists them
+
         for child in self.constraints:
             trial = possibilities.copy()
             try:
                 _settle_branch(trial, child)
-            except Contradiction:
-                continue  # This branch can't happen — drop it and move on.
-            survivors.append(trial)
+            except Contradiction as dead_end:
+                # Trim to the chain that actually reached the contradiction —
+                # a branch does plenty of work that never bore on it.
+                branches.append(SubProof(
+                    steps=relevant(trial.steps, [dead_end.step]),
+                    refuted=True,
+                    about=child,
+                ))
+                continue
+            survivors.append((child, trial))
 
         # Every branch died, so the Or itself can't hold.
         if not survivors:
-            raise Contradiction("no branch of this Or can hold")
+            possibilities.record_contradiction(
+                "no branch of this Or can hold",
+                because=self,
+                children=branches,
+            )
 
-        return self._keep_union(possibilities, survivors)
+        return self._keep_union(possibilities, survivors, branches)
 
     def is_speculative(self):
         """Or is the one clue that has to guess and copy the grid."""
         return True
 
-    def _keep_union(self, possibilities, survivors):
+    def _keep_union(self, possibilities, survivors, refutations):
         """Cross off values that NO surviving branch still allows. A value even
         one branch allows must stay — that branch could be the true one. With a
         single survivor this copies its eliminations across, so 'only one
@@ -249,10 +269,26 @@ class Or(Constraint):
                 # candidates() hands back a copy, so eliminating below can't
                 # disturb what we're looping over.
                 for value in possibilities.candidates(category, position):
-                    if any(s.is_candidate(category, position, value) for s in survivors):
+                    if any(t.is_candidate(category, position, value) for _, t in survivors):
                         continue
-                    if possibilities.eliminate(category, position, value):
-                        changed = True
+                    if not possibilities.eliminate(category, position, value, because=self):
+                        continue
+                    changed = True
+
+                    # The justification is every branch at once: the ones that
+                    # died, plus the chain by which each survivor also killed
+                    # this value. Look the step back up to hang them on it.
+                    step = possibilities.killed_by(category, position, value)
+                    step.children = list(refutations) + [
+                        SubProof(
+                            steps=relevant(trial.steps,
+                                           [trial.killed_by(category, position, value)]),
+                            refuted=False,
+                            about=child,
+                        )
+                        for child, trial in survivors
+                        if trial.killed_by(category, position, value) is not None
+                    ]
 
         return changed
 
