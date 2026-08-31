@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import operator as op
 
 from possibilities import Contradiction
@@ -55,6 +55,12 @@ class AbsolutePosition(Constraint):
     operator: str
     position: int
 
+    # The user's original English sentence, kept from translation time so the
+    # explanation can quote their own words back instead of showing internals.
+    # compare=False keeps it out of __eq__, so adding it changes no existing
+    # behaviour — two clues that mean the same thing stay equal.
+    source_text: str | None = field(default=None, compare=False)
+
     def __post_init__(self):
         _validate_operator(self.operator)
 
@@ -91,6 +97,8 @@ class RelativePosition(Constraint):
     b: tuple
     operator: str
     offset: int = 0
+
+    source_text: str | None = field(default=None, compare=False)
 
     def __post_init__(self):
         _validate_operator(self.operator)
@@ -151,6 +159,8 @@ class And(Constraint):
 
     constraints: list
 
+    source_text: str | None = field(default=None, compare=False)
+
     def propagate(self, possibilities):
         # No short-circuiting — each child may rule out different candidates.
         changed = False
@@ -180,6 +190,8 @@ class Or(Constraint):
     """Holds if at least one child holds."""
 
     constraints: list
+
+    source_text: str | None = field(default=None, compare=False)
 
     def propagate(self, possibilities):
         """Try every branch on its own copy. A value is only impossible if
