@@ -73,9 +73,11 @@ class AbsolutePosition(Constraint):
         # Every operator does at least this: cross the value off each position
         # where the comparison comes out false. That alone fully handles
         # "!=", "<", ">", "<=" and ">=".
+        # Nothing to lean on: this reads no grid state, only the clue and
+        # arithmetic. These are the roots every other deduction traces back to.
         for position in puzzle.positions:
             if not compare(position, self.position):
-                if possibilities.eliminate(category, position, value):
+                if possibilities.eliminate(category, position, value, because=self):
                     changed = True
 
         # "==" is the only one that pins both directions. The loop above
@@ -83,7 +85,9 @@ class AbsolutePosition(Constraint):
         # fact, that nothing else in the category can live here.
         if self.operator == "==":
             for other_value in puzzle.categories[category]:
-                if other_value != value and possibilities.eliminate(category, self.position, other_value):
+                if other_value == value:
+                    continue
+                if possibilities.eliminate(category, self.position, other_value, because=self):
                     changed = True
 
         return changed
@@ -147,7 +151,23 @@ class RelativePosition(Constraint):
         for target_position in target_positions:
             if _has_legal_partner(target_position, partner_positions, pair_is_legal):
                 continue
-            if possibilities.eliminate(target_category, target_position, target_value):
+
+            # This candidate died because every partner position that could
+            # have paired with it is already gone. Those deaths are the proof.
+            # If NO position was ever legal (say "immediately left of" tested
+            # at the last house) there is nothing to cite and this is a root,
+            # exactly like an AbsolutePosition.
+            evidence = []
+            for partner_position in possibilities.puzzle.positions:
+                if not pair_is_legal(target_position, partner_position):
+                    continue
+                killer = possibilities.killed_by(partner_category, partner_position,
+                                                 partner_value)
+                if killer is not None:
+                    evidence.append(killer)
+
+            if possibilities.eliminate(target_category, target_position, target_value,
+                                       because=self, leaning_on=evidence):
                 changed = True
 
         return changed
