@@ -469,3 +469,40 @@ def test_validate_accepts_a_list_of_good_constraints():
         AbsolutePosition(("color", "red"), "==", 1),
         RelativePosition(("color", "green"), ("color", "blue"), "<", 0),
     ])
+
+
+# A clue naming house 47 in a five-house puzzle is a BROKEN CLUE, not an
+# impossible puzzle. Without this, propagation crosses the value off
+# everywhere and reports UNSOLVABLE — telling a user their good puzzle is
+# broken, when the AI is the thing that needs retrying.
+def test_a_position_outside_the_puzzle_is_rejected():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+
+    with pytest.raises(InvalidConstraint) as raised:
+        validate_constraints(puzzle, [AbsolutePosition(("color", "red"), "==", 47)])
+
+    problem = raised.value.problems[0]
+    assert problem.kind == "position"
+    assert problem.value == 47
+    assert problem.allowed == [1, 2, 3]
+
+
+# Position zero is outside a 1-indexed puzzle too — an easy off-by-one for a
+# translator that thinks in zero-based arrays.
+def test_position_zero_is_rejected():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+
+    with pytest.raises(InvalidConstraint):
+        validate_constraints(puzzle, [AbsolutePosition(("color", "red"), "==", 0)])
+
+
+# A bad position nested inside a combined clue is still found.
+def test_a_bad_position_inside_a_group_is_found():
+    puzzle = Puzzle({"color": ["red", "green", "blue"]}, 3)
+    clue = Or([AbsolutePosition(("color", "red"), "==", 1),
+               AbsolutePosition(("color", "red"), "==", 9)])
+
+    with pytest.raises(InvalidConstraint) as raised:
+        validate_constraints(puzzle, [clue])
+
+    assert any(p.kind == "position" for p in raised.value.problems)

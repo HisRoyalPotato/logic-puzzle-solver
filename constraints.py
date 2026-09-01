@@ -300,7 +300,7 @@ class BadReference:
     it back to the AI, and digging that out of prose would be miserable."""
 
     clue: object   # the constraint that named it
-    kind: str      # "category" or "value" — which half was wrong
+    kind: str      # "category", "value", or "position" — what was wrong
     category: str  # the category name the clue used
     value: str     # the value the clue used
     allowed: list  # what it could have said instead
@@ -325,6 +325,8 @@ class InvalidConstraint(ValueError):
 def _describe(problem):
     """One bad reference as a readable sentence, for humans and logs. The
     structured fields on BadReference are what code should read."""
+    if problem.kind == "position":
+        return f"position {problem.value} is outside this puzzle (have: {problem.allowed})"
     if problem.kind == "category":
         return f"'{problem.category}' is not a category in this puzzle (have: {problem.allowed})"
     return (
@@ -351,6 +353,7 @@ def _collect_bad_references(puzzle, constraint, problems):
     `problems`. Collects rather than raising, so one pass finds them all."""
     if isinstance(constraint, AbsolutePosition):
         _check_reference(puzzle, constraint, constraint.category_value, problems)
+        _check_position(puzzle, constraint, constraint.position, problems)
     elif isinstance(constraint, RelativePosition):
         _check_reference(puzzle, constraint, constraint.a, problems)
         _check_reference(puzzle, constraint, constraint.b, problems)
@@ -361,6 +364,22 @@ def _collect_bad_references(puzzle, constraint, problems):
         # Not an AI mistake — something handed us an object that isn't a clue
         # at all. That's a bug in the calling code, so fail immediately.
         raise TypeError(f"unknown constraint type: {type(constraint).__name__}")
+
+
+def _check_position(puzzle, clue, position, problems):
+    """Record a BadReference if the clue names a position the puzzle has no
+    room for — "house 47" in a five-house puzzle.
+
+    Worth catching here rather than letting it through: propagation would
+    cross the value off everywhere and report the PUZZLE as unsolvable, when
+    really the CLUE is broken. Those two need different responses — one is
+    shown to the user, the other is retried with the AI.
+    """
+    if position not in puzzle.positions:
+        problems.append(BadReference(
+            clue=clue, kind="position", category=None, value=position,
+            allowed=list(puzzle.positions),
+        ))
 
 
 def _check_reference(puzzle, clue, category_value, problems):
