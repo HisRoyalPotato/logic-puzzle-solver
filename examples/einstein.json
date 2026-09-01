@@ -1,0 +1,287 @@
+{
+  "name": "The Einstein Puzzle",
+  "question": "Who owns the zebra, and who drinks water?",
+  "text": "There are five houses in a row, each painted a different colour. In each house lives a person of a different nationality. The five owners each drink a different drink, smoke a different brand, and keep a different pet.\n\nThe Englishman lives in the red house.\nThe Spaniard owns the dog.\nCoffee is drunk in the green house.\nThe Ukrainian drinks tea.\nThe green house is immediately to the right of the ivory house.\nThe Old Gold smoker owns snails.\nKools are smoked in the yellow house.\nMilk is drunk in the middle house.\nThe Norwegian lives in the first house.\nThe man who smokes Chesterfields lives in the house next to the man with the fox.\nKools are smoked in the house next to the house where the horse is kept.\nThe Lucky Strike smoker drinks orange juice.\nThe Japanese smokes Parliaments.\nThe Norwegian lives next to the blue house.\n\nWho owns the zebra, and who drinks water?",
+  "num_positions": 5,
+  "categories": {
+    "nation": [
+      "English",
+      "Spaniard",
+      "Ukrainian",
+      "Norwegian",
+      "Japanese"
+    ],
+    "color": [
+      "red",
+      "green",
+      "ivory",
+      "yellow",
+      "blue"
+    ],
+    "pet": [
+      "dog",
+      "snails",
+      "fox",
+      "horse",
+      "zebra"
+    ],
+    "drink": [
+      "coffee",
+      "tea",
+      "milk",
+      "juice",
+      "water"
+    ],
+    "smoke": [
+      "OldGold",
+      "Kools",
+      "Chesterfields",
+      "LuckyStrike",
+      "Parliaments"
+    ]
+  },
+  "clues": [
+    {
+      "type": "RelativePosition",
+      "a": [
+        "nation",
+        "English"
+      ],
+      "b": [
+        "color",
+        "red"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Englishman lives in the red house."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "nation",
+        "Spaniard"
+      ],
+      "b": [
+        "pet",
+        "dog"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Spaniard owns the dog."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "drink",
+        "coffee"
+      ],
+      "b": [
+        "color",
+        "green"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "Coffee is drunk in the green house."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "nation",
+        "Ukrainian"
+      ],
+      "b": [
+        "drink",
+        "tea"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Ukrainian drinks tea."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "color",
+        "ivory"
+      ],
+      "b": [
+        "color",
+        "green"
+      ],
+      "operator": "==",
+      "offset": 1,
+      "source_text": "The green house is immediately to the right of the ivory house."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "smoke",
+        "OldGold"
+      ],
+      "b": [
+        "pet",
+        "snails"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Old Gold smoker owns snails."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "smoke",
+        "Kools"
+      ],
+      "b": [
+        "color",
+        "yellow"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "Kools are smoked in the yellow house."
+    },
+    {
+      "type": "AbsolutePosition",
+      "category_value": [
+        "drink",
+        "milk"
+      ],
+      "operator": "==",
+      "position": 3,
+      "source_text": "Milk is drunk in the middle house."
+    },
+    {
+      "type": "AbsolutePosition",
+      "category_value": [
+        "nation",
+        "Norwegian"
+      ],
+      "operator": "==",
+      "position": 1,
+      "source_text": "The Norwegian lives in the first house."
+    },
+    {
+      "type": "Or",
+      "constraints": [
+        {
+          "type": "RelativePosition",
+          "a": [
+            "smoke",
+            "Chesterfields"
+          ],
+          "b": [
+            "pet",
+            "fox"
+          ],
+          "operator": "==",
+          "offset": 1
+        },
+        {
+          "type": "RelativePosition",
+          "a": [
+            "smoke",
+            "Chesterfields"
+          ],
+          "b": [
+            "pet",
+            "fox"
+          ],
+          "operator": "==",
+          "offset": -1
+        }
+      ],
+      "source_text": "The man who smokes Chesterfields lives in the house next to the man with the fox."
+    },
+    {
+      "type": "Or",
+      "constraints": [
+        {
+          "type": "RelativePosition",
+          "a": [
+            "smoke",
+            "Kools"
+          ],
+          "b": [
+            "pet",
+            "horse"
+          ],
+          "operator": "==",
+          "offset": 1
+        },
+        {
+          "type": "RelativePosition",
+          "a": [
+            "smoke",
+            "Kools"
+          ],
+          "b": [
+            "pet",
+            "horse"
+          ],
+          "operator": "==",
+          "offset": -1
+        }
+      ],
+      "source_text": "Kools are smoked in the house next to the house where the horse is kept."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "smoke",
+        "LuckyStrike"
+      ],
+      "b": [
+        "drink",
+        "juice"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Lucky Strike smoker drinks orange juice."
+    },
+    {
+      "type": "RelativePosition",
+      "a": [
+        "nation",
+        "Japanese"
+      ],
+      "b": [
+        "smoke",
+        "Parliaments"
+      ],
+      "operator": "==",
+      "offset": 0,
+      "source_text": "The Japanese smokes Parliaments."
+    },
+    {
+      "type": "Or",
+      "constraints": [
+        {
+          "type": "RelativePosition",
+          "a": [
+            "nation",
+            "Norwegian"
+          ],
+          "b": [
+            "color",
+            "blue"
+          ],
+          "operator": "==",
+          "offset": 1
+        },
+        {
+          "type": "RelativePosition",
+          "a": [
+            "nation",
+            "Norwegian"
+          ],
+          "b": [
+            "color",
+            "blue"
+          ],
+          "operator": "==",
+          "offset": -1
+        }
+      ],
+      "source_text": "The Norwegian lives next to the blue house."
+    }
+  ]
+}
