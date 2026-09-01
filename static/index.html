@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Puzzle Solver</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #ffffff; --ink: #1d1b18; --soft: #6b665e;
+    --line: #e3ded6; --accent: #7c4a2d; --accent-soft: #f2e9e2;
+    --good: #2f6f4e; --bad: #9a3b2f;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f; --panel: #1e1d16; --ink: #ece7dd; --soft: #9a9488;
+      --line: #322f26; --accent: #d59a72; --accent-soft: #2a241d;
+      --good: #7fbd97; --bad: #e08c7d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 32px; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .tag { color: var(--soft); font-size: 15px; margin: 0; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em;
+       color: var(--soft); margin: 36px 0 14px; font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: 20px; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    padding: 11px 18px;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.ghost { background: transparent; color: var(--accent); }
+  textarea, input {
+    font: inherit; width: 100%; padding: 11px 13px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  }
+  textarea { min-height: 150px; resize: vertical; font-size: 15px; }
+  label { display: block; font-size: 14px; color: var(--soft); margin: 14px 0 6px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .note { font-size: 13.5px; color: var(--soft); margin-top: 10px; }
+  details.byo { margin-top: 18px; }
+  details.byo > summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 15px; }
+
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  ol.clues { margin: 0; padding-left: 22px; color: var(--soft); font-size: 14.5px; }
+  ol.clues li { margin: 3px 0; }
+
+  .step { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: none; }
+  .fact { margin: 0; }
+  .fact.concluded { color: var(--good); font-weight: 600; }
+  .fact.broke { color: var(--bad); font-weight: 600; }
+  .why { font-size: 13.5px; color: var(--soft); margin: 3px 0 0; }
+  .why em { color: var(--accent); font-style: normal; }
+  .more { font-size: 13px; color: var(--soft); }
+
+  details.proof { margin: 8px 0 2px; padding-left: 14px; border-left: 2px solid var(--accent-soft); }
+  details.proof > summary { cursor: pointer; font-size: 13.5px; color: var(--accent); }
+  details.proof[open] > summary { margin-bottom: 6px; }
+
+  .status { display: inline-block; padding: 3px 10px; border-radius: 999px;
+            font-size: 13px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+  .err { color: var(--bad); }
+  .hidden { display: none; }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+           color: var(--soft); font-size: 13.5px; }
+  code { font-family: var(--mono); font-size: 0.92em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Logic Puzzle Solver</h1>
+    <p class="tag">An AI reads the English. A hand-built solver does every piece of the reasoning &mdash; and shows its work.</p>
+  </header>
+
+  <div class="panel">
+    <div class="row">
+      <button id="run-example">Solve the Einstein puzzle</button>
+      <span class="note" style="margin:0">No API key needed &mdash; it ships already translated.</span>
+    </div>
+
+    <details class="byo">
+      <summary>Or type your own puzzle</summary>
+      <label for="text">Your puzzle, in plain English</label>
+      <textarea id="text" placeholder="There are four houses in a row&hellip;"></textarea>
+      <label for="key">Your Anthropic API key</label>
+      <input id="key" type="password" placeholder="sk-ant-&hellip;" autocomplete="off">
+      <p class="note">
+        Used for one request, then dropped &mdash; never stored, never logged. Translating
+        costs a few cents, billed to you. The solving and the explanation are free.
+      </p>
+      <div class="row" style="margin-top:12px">
+        <button id="run-mine" class="ghost">Translate and solve</button>
+      </div>
+    </details>
+  </div>
+
+  <p id="msg" class="note hidden"></p>
+  <div id="out" class="hidden"></div>
+
+  <footer>
+    The AI never solves anything. It turns sentences into structured clues, which are
+    checked by three separate guards before the solver sees them. Every step below is
+    a proof you can follow &mdash; nothing rests on a guess.
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function say(text, isError) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'note' + (isError ? ' err' : '');
+  m.classList.toggle('hidden', !text);
+}
+
+/* One group of steps. Recurses for the sub-proofs behind a refutation. */
+function renderGroup(g) {
+  const kindClass = g.kind === 'conclude' ? 'concluded'
+                  : g.kind === 'contradiction' ? 'broke' : '';
+  let html = '<div class="step">';
+  html += `<p class="fact ${kindClass}">${esc(g.says[0])}</p>`;
+
+  if (g.says.length > 1) {
+    html += `<p class="more">&hellip; and ${g.says.length - 1} more the same way: `
+          + g.says.slice(1).map(esc).join('; ') + '</p>';
+  }
+
+  const bits = [];
+  if (g.clue && g.clue.text) {
+    bits.push(g.clue.kind === 'rule'
+      ? `rule: ${esc(g.clue.text)}`
+      : `clue ${g.clue.number ?? ''} &mdash; <em>&ldquo;${esc(g.clue.text)}&rdquo;</em>`);
+  }
+  if (g.because && g.because.length) {
+    bits.push('because ' + g.because.map(b => esc(b.says)).join(', and '));
+  }
+  if (bits.length) html += `<p class="why">${bits.join(' &middot; ')}</p>`;
+
+  (g.children || []).forEach(sub => {
+    const ended = sub.ended_in_contradiction ? 'that turned out to be impossible'
+                                             : 'the same thing follows';
+    /* `assuming` is a sentence for a shaving refutation, but a clue reference
+       for an Or branch, and may be absent entirely. */
+    const about = !sub.assuming ? 'this branch'
+                : sub.assuming.text ? `“${sub.assuming.text}”`
+                : sub.assuming;
+    html += `<details class="proof"><summary>${esc(about)} &rarr; ${ended}</summary>`;
+    html += (sub.steps || []).map(renderGroup).join('');
+    html += '</details>';
+  });
+
+  return html + '</div>';
+}
+
+function render(data) {
+  const out = $('out');
+  let html = '';
+
+  html += `<h2>${esc(data.info.name)}</h2>`;
+  html += `<p><span class="status">${esc(data.status)}</span></p>`;
+  if (data.reason) html += `<p class="note">${esc(data.reason)}</p>`;
+
+  if (data.answer) {
+    html += '<h2>The answer</h2><div class="panel scroll"><table><thead><tr><th>House</th>';
+    data.categories.forEach(c => html += `<th>${esc(c)}</th>`);
+    html += '</tr></thead><tbody>';
+    data.answer.forEach(row => {
+      html += `<tr><td><strong>${row.position}</strong></td>`;
+      data.categories.forEach(c => html += `<td>${esc(row.values[c])}</td>`);
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  if (data.clues.length) {
+    html += '<h2>The clues it was given</h2><div class="panel"><ol class="clues">';
+    data.clues.forEach(c => html += `<li>${esc(c.text)}</li>`);
+    html += '</ol></div>';
+  }
+
+  html += `<h2>How it worked it out &mdash; ${data.trace.length} steps</h2>`;
+  html += '<div class="panel">' + data.trace.map(renderGroup).join('') + '</div>';
+
+  out.innerHTML = html;
+  out.classList.remove('hidden');
+}
+
+async function call(url, options, button, working) {
+  $('out').classList.add('hidden');
+  button.disabled = true;
+  say(working);
+  try {
+    const res = await fetch(url, options);
+    const body = await res.json();
+    if (!res.ok) {
+      const d = body.detail;
+      let text = typeof d === 'string' ? d : (d && d.message) || 'Something went wrong.';
+      if (d && d.attempts && d.attempts.length) {
+        text += ' The checks said: ' + d.attempts[d.attempts.length - 1].join(' ');
+      }
+      say(text, true);
+      return;
+    }
+    say('');
+    render(body);
+  } catch (e) {
+    say('Could not reach the server: ' + e.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$('run-example').onclick = e =>
+  call('/api/example', {}, e.target, 'Solving…');
+
+$('run-mine').onclick = e =>
+  call('/api/solve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: $('text').value, api_key: $('key').value}),
+  }, e.target, 'Reading your puzzle, then solving it…');
+</script>
+</body>
+</html>
